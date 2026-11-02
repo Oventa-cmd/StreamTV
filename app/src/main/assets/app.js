@@ -87,19 +87,49 @@ function toggleFav(id) {
 }
 
 /* ================= Quellen (M3U & Xtream) ================= */
-async function getText(url, ms = 30000) {
-  const r = await request('GET', url, { timeout: ms });
-  if ((r.status >= 200 && r.status < 300) || (r.status === 0 && r.text)) return r.text;
-  throw new Error('HTTP ' + r.status);
+function vpnHint() {
+  const v = vpn();
+  return v && v.active ? ' Tipp: Viele IPTV-Anbieter sperren VPN-Server – testweise ProtonVPN trennen.' : '';
+}
+async function getText(url, ms = 90000) {
+  let r;
+  try { r = await request('GET', url, { timeout: ms }); }
+  catch (e) {
+    throw new Error(e.message === 'Zeitüberschreitung'
+      ? 'Zeitüberschreitung – Server antwortet nicht.' + vpnHint()
+      : 'Server nicht erreichbar – Adresse und Port prüfen (z. B. http://server.tv:8080).' + vpnHint());
+  }
+  if ((r.status >= 200 && r.status < 300) || (r.status === 0 && r.text)) return r.text.replace(/^﻿/, '');
+  if (r.status === 401 || r.status === 403) throw new Error(`Zugriff verweigert (HTTP ${r.status}).` + (vpnHint() || ' Zugangsdaten oder Anbieter-Sperre prüfen.'));
+  if (r.status === 404) throw new Error('Adresse nicht gefunden (HTTP 404) – Server-URL prüfen.');
+  if (r.status === 0) throw new Error('Keine Antwort vom Server.' + vpnHint());
+  throw new Error('Serverfehler (HTTP ' + r.status + ').');
 }
 async function getJSON(url) {
-  const t = await getText(url);
-  try { return JSON.parse(t); } catch (e) { throw new Error('Ungültige Antwort vom Server'); }
+  const t = (await getText(url)).trim();
+  try { return JSON.parse(t); }
+  catch (e) { throw new Error('Ungültige Antwort vom Server: „' + t.slice(0, 60).replace(/\s+/g, ' ') + '“'); }
 }
 function normServer(s) {
-  s = s.trim().replace(/\/+$/, '').replace(/\/player_api\.php.*$/i, '');
+  s = s.trim().replace(/\/+$/, '').replace(/\/(player_api|get|xmltv)\.php.*$/i, '').replace(/\/c$/i, '');
   if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
   return s;
+}
+/** Erkennt eingefügte Komplett-Links wie http://host:port/get.php?username=…&password=… */
+function parseXtreamLink(text) {
+  try {
+    const u = new URL(/^https?:\/\//i.test(text.trim()) ? text.trim() : 'http://' + text.trim());
+    const user = u.searchParams.get('username'), pass = u.searchParams.get('password');
+    if (!user || !pass) return null;
+    return { server: u.protocol + '//' + u.host, user, pass };
+  } catch (e) { return null; }
+}
+async function xtreamViaM3U(base, u, p, src) {
+  const out = src.format === 'ts' ? 'ts' : 'm3u8';
+  const list = parseM3U(await getText(`${base}/get.php?username=${u}&password=${p}&type=m3u_plus&output=${out}`), src.id);
+  if (!list.length) throw new Error('Keine Kanäle gefunden');
+  src.info = 'Geladen über die M3U-Schnittstelle des Anbieters';
+  return list;
 }
 async function fetchSource(src) {
   if (src.type === 'm3u') {
@@ -111,9 +141,15 @@ async function fetchSource(src) {
   const base = normServer(src.server);
   const u = encodeURIComponent(src.user), p = encodeURIComponent(src.pass);
   const api = `${base}/player_api.php?username=${u}&password=${p}`;
-  const info = await getJSON(api);
+  let info;
+  try { info = await getJSON(api); }
+  catch (e) {
+    // Manche Anbieter sperren die API, liefern aber die M3U-Liste aus
+    try { return await xtreamViaM3U(base, u, p, src); } catch (e2) { throw e; }
+  }
   const ui = info && info.user_info;
-  if (!ui || Number(ui.auth) === 0) throw new Error('Anmeldung fehlgeschlagen – Zugangsdaten prüfen');
+  if (!ui || Number(ui.auth) === 0) throw new Error('Anmeldung fehlgeschlagen – Benutzername oder Passwort falsch.');
+  if (ui.status && !/^active$/i.test(ui.status)) throw new Error(`Zugang ist „${ui.status}“ – beim Anbieter prüfen.`);
   const exp = ui.exp_date ? new Date(Number(ui.exp_date) * 1000).toLocaleDateString('de-DE') : 'unbegrenzt';
   src.info = `${ui.status || 'Aktiv'} · gültig bis ${exp}` + (ui.max_connections ? ` · max. ${ui.max_connections} Verbindung(en)` : '');
   const cats = await getJSON(api + '&action=get_live_categories');
@@ -764,17 +800,25 @@ $('#m3uAdd').addEventListener('click', async e => {
   const url = $('#m3uUrl').value.trim();
   if (!/^https?:\/\//i.test(url)) return toast('Bitte einen gültigen http(s)-Link eingeben');
   const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Lädt …';
-  const ok = await addSource({ id: 's' + uid(), type: 'm3u', name: $('#m3uName').value.trim() || 'M3U-Playlist', url });
+  $('#m3uErr').textContent = '';
+  const src = { id: 's' + uid(), type: 'm3u', name: $('#m3uName').value.trim() || 'M3U-Playlist', url };
+  const ok = await addSource(src);
   btn.disabled = false; btn.textContent = 'Hinzufügen & laden';
   if (ok) { $('#m3uName').value = ''; $('#m3uUrl').value = ''; }
+  else $('#m3uErr').textContent = 'Fehler: ' + (src.error || 'unbekannt');
 });
 $('#xtAdd').addEventListener('click', async e => {
-  const server = $('#xtServer').value.trim(), user = $('#xtUser').value.trim(), pass = $('#xtPass').value;
+  let server = $('#xtServer').value.trim(), user = $('#xtUser').value.trim(), pass = $('#xtPass').value.trim();
+  const link = parseXtreamLink(server);
+  if (link) { server = link.server; user = user || link.user; pass = pass || link.pass; }
   if (!server || !user || !pass) return toast('Server, Benutzername und Passwort ausfüllen');
   const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Anmelden …';
-  const ok = await addSource({ id: 's' + uid(), type: 'xtream', name: $('#xtName').value.trim() || 'Xtream', server: normServer(server), user, pass, format: xtFmt });
+  $('#xtErr').textContent = '';
+  const src = { id: 's' + uid(), type: 'xtream', name: $('#xtName').value.trim() || 'Xtream', server: normServer(server), user, pass, format: xtFmt };
+  const ok = await addSource(src);
   btn.disabled = false; btn.textContent = 'Anmelden & laden';
   if (ok) ['#xtName', '#xtServer', '#xtUser', '#xtPass'].forEach(s => $(s).value = '');
+  else $('#xtErr').textContent = 'Fehler: ' + (src.error || 'unbekannt') + ' (Server: ' + src.server + ')';
 });
 function toggleSetting(key) { state.settings[key] = !state.settings[key]; persist(); renderSettings(); }
 $('#swAuto').addEventListener('click', () => toggleSetting('autoRefresh'));

@@ -110,11 +110,12 @@
             <input class="focusable field" id="m3uUrl" placeholder="https://…/playlist.m3u" />
           </div>
           <div class="form-actions"><button class="btn primary small focusable" id="m3uAdd" type="button">Hinzufügen &amp; laden</button></div>
+          <p class="form-err" id="m3uErr"></p>
         </div>
         <div id="formXt" class="hidden">
           <div class="form-grid">
             <input class="focusable field" id="xtName" placeholder="Name (z. B. Mein Anbieter)" />
-            <input class="focusable field" id="xtServer" placeholder="Server, z. B. http://server.tv:8080" />
+            <input class="focusable field" id="xtServer" placeholder="Server (z. B. http://server.tv:8080) oder kompletter Link" />
             <input class="focusable field" id="xtUser" placeholder="Benutzername" autocomplete="off" />
             <input class="focusable field" id="xtPass" placeholder="Passwort" type="password" autocomplete="off" />
           </div>
@@ -125,6 +126,7 @@
             </div>
             <button class="btn primary small focusable" id="xtAdd" type="button">Anmelden &amp; laden</button>
           </div>
+          <p class="form-err" id="xtErr"></p>
         </div>
       </div>
       <p class="group-foot">Xtream lädt alle Live-TV-Kanäle samt Kategorien. Bleibt ein Sender schwarz, das Format auf MPEG-TS umstellen.</p>

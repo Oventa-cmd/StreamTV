@@ -238,3 +238,6 @@ button.pill:focus{background:#fff;color:#000}
   .status{gap:.5rem;font-size:.88rem}
 }
 .sheet .inner{max-width:min(860px,72%)}
+
+.form-err{color:#ff8a80;font-size:.85rem;font-weight:600;padding:0 1.1rem 1rem;line-height:1.45}
+.form-err:empty{display:none}

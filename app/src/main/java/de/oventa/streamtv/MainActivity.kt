@@ -39,6 +39,8 @@ class MainActivity : Activity() {
             allowUniversalAccessFromFileURLs = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             textZoom = 100
+            // Viele IPTV-Server lassen nur bekannte Player zu (Browser-Kennung wird oft blockiert)
+            userAgentString = "IPTVSmartersPlayer"
         }
         web.addJavascriptInterface(Bridge(), "StreamTVApp")
 
