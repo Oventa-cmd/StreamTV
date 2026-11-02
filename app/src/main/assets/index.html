@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>StreamTV – IPTV Player</title>
+<script src="hls.min.js"></script>
+<style>
+:root{--bg:#141414;--panel:#1f1f1f;--card:#2b2b2b;--red:#e50914;--txt:#fff;--mut:#a3a3a3}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px}
+@media (min-width:1600px){html{font-size:20px}}
+body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;min-height:100vh;overflow-x:hidden}
+button,input{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer}
+:focus-visible{outline:3px solid #fff;outline-offset:3px}
+
+header{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:2rem;padding:1rem 4%;background:linear-gradient(to bottom,rgba(0,0,0,.92),transparent)}
+.logo{color:var(--red);font-weight:900;font-size:1.5rem;letter-spacing:.04em}
+nav{display:flex;flex-wrap:wrap;gap:.25rem}
+nav button{color:var(--mut);padding:.4rem .75rem;border-radius:.3rem;font-weight:600}
+nav button:hover,nav button.active{color:#fff}
+nav button.active{background:rgba(255,255,255,.1)}
+main{padding-top:4.5rem}
+.view{display:none}
+.view.active{display:block}
+.pad{padding:0 4%}
+.section-title{font-size:1.6rem;margin-bottom:1rem}
+.empty{color:var(--mut);padding:2rem 4%}
+.hint{color:var(--mut);font-size:.85rem;margin-top:.5rem}
+.eyebrow{color:var(--mut);font-size:.85rem;text-transform:uppercase;letter-spacing:.08em}
+
+.chips{display:flex;gap:.6rem;overflow-x:auto;padding:.5rem 4% 0;scrollbar-width:none}
+.chip{padding:.45rem 1rem;border-radius:999px;background:var(--card);white-space:nowrap;color:var(--mut);font-size:.9rem}
+.chip.active,.chip:hover{background:#fff;color:#000}
+
+.hero{position:relative;height:min(55vh,520px);display:flex;align-items:flex-end;padding:0 4% 3rem;background:radial-gradient(circle at 80% 30%,#4a0d1c,#141414 70%)}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,var(--bg) 5%,transparent 60%)}
+.hero-content{position:relative;z-index:1;max-width:620px}
+.hero h1{font-size:clamp(1.8rem,4vw,3.2rem);margin:.4rem 0 .6rem}
+.hero p{color:var(--mut);margin-bottom:1rem}
+
+.btn{display:inline-flex;gap:.5rem;align-items:center;padding:.7rem 1.4rem;border-radius:.3rem;font-weight:700;background:#fff;color:#000}
+.btn.ghost{background:rgba(109,109,110,.7);color:#fff}
+
+.row{margin:1.5rem 0 .5rem}
+.row h2{font-size:1.15rem;padding:0 4%;margin-bottom:.6rem;font-weight:700}
+.row h2 small{color:var(--mut);font-weight:400;margin-left:.4rem}
+.rail{display:flex;gap:.9rem;overflow-x:auto;padding:.6rem 4% 1rem;scroll-behavior:smooth;scrollbar-width:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:1.2rem;padding:0 4%}
+
+.card{position:relative;flex:0 0 auto;width:12rem;aspect-ratio:16/9;border-radius:.4rem;background:var(--card);overflow:hidden;text-align:left;cursor:pointer;transition:transform .2s,box-shadow .2s}
+.card:focus,.card:hover{transform:scale(1.07);box-shadow:0 10px 30px rgba(0,0,0,.6);outline:3px solid #fff;outline-offset:2px}
+.grid .card{width:100%}
+.card .ini{position:absolute;inset:0;display:grid;place-items:center;font-size:1.6rem;font-weight:800;color:#777}
+.card img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:14%}
+.card .name{position:absolute;left:0;right:0;bottom:0;padding:1.2rem .6rem .4rem;background:linear-gradient(transparent,rgba(0,0,0,.9));font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .star{position:absolute;top:.4rem;right:.4rem;z-index:2;width:2rem;height:2rem;border-radius:50%;background:rgba(0,0,0,.6);color:#888;font-size:1rem}
+.card .star.on{color:#facc15}
+
+.search{width:100%;max-width:640px;padding:.9rem 1.1rem;border-radius:.4rem;border:1px solid #444;background:#222;font-size:1.05rem;margin-bottom:1.5rem}
+.panel{background:var(--panel);border-radius:.6rem;padding:1.2rem;margin-bottom:1.2rem}
+.panel h3{margin-bottom:.8rem}
+.form-row{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem}
+.form-row input,.form-grid input{flex:1 1 220px;padding:.7rem .9rem;border-radius:.3rem;border:1px solid #444;background:#222}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.6rem;margin-bottom:.8rem}
+.form-actions{display:flex;gap:.6rem;flex-wrap:wrap}
+.list-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem}
+.item{display:flex;align-items:center;gap:.8rem;padding:.6rem .4rem;border-bottom:1px solid #2a2a2a;flex-wrap:wrap}
+.item .meta{flex:1 1 200px;min-width:0}
+.item .meta b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .meta small{display:block;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .actions{display:flex;gap:.4rem;flex-wrap:wrap}
+.item .actions button{padding:.4rem .7rem;border-radius:.3rem;background:var(--card);font-size:.85rem}
+
+#player{position:fixed;inset:0;z-index:50;background:#000;display:none}
+#player.open{display:block}
+#video{width:100%;height:100%;background:#000;object-fit:contain}
+#status{position:absolute;top:1.2rem;left:4%;color:#fff;background:rgba(0,0,0,.6);padding:.3rem .7rem;border-radius:.3rem;font-size:.9rem}
+#status:empty{display:none}
+#osd{position:absolute;left:0;right:0;bottom:0;padding:3rem 4% 2rem;background:linear-gradient(transparent,rgba(0,0,0,.9));transition:opacity .4s}
+#osd.hide{opacity:0;pointer-events:none}
+#osd h3{font-size:1.7rem;margin:.3rem 0 1rem}
+.osd-btns{display:flex;gap:.6rem;flex-wrap:wrap}
+
+@media (max-width:700px){
+  header{gap:1rem;padding:.8rem 4%}
+  nav button{padding:.3rem .5rem;font-size:.9rem}
+  .hero{height:52vh;padding-bottom:2rem}
+  .rail .card{width:9.5rem}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:.8rem}
+}
+@media (min-width:1600px){
+  .rail .card{width:16rem}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(14rem,1fr))}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">StreamTV</div>
+  <nav>
+    <button class="focusable" data-view="home">Start</button>
+    <button class="focusable" data-view="search">Suche</button>
+    <button class="focusable" data-view="favorites">Favoriten</button>
+    <button class="focusable" data-view="manage">Kanäle</button>
+  </nav>
+</header>
+
+<main>
+  <section class="view active" id="view-home">
+    <div class="chips" id="chips"></div>
+    <div class="hero" id="hero"></div>
+    <div id="homeRows"></div>
+  </section>
+
+  <section class="view" id="view-search">
+    <div class="pad">
+      <h2 class="section-title">Suche</h2>
+      <input id="q" class="focusable search" type="search" placeholder="Kanal oder Kategorie suchen …" autocomplete="off" />
+      <div class="grid" id="searchGrid"></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-favorites">
+    <div class="pad">
+      <h2 class="section-title">Favoriten</h2>
+    </div>
+    <div class="grid" id="favGrid"></div>
+  </section>
+
+  <section class="view" id="view-manage">
+    <div class="pad">
+      <h2 class="section-title">Kanalverwaltung</h2>
+
+      <div class="panel">
+        <h3>Playlist importieren (M3U)</h3>
+        <div class="form-row">
+          <input id="plUrl" class="focusable" placeholder="https://example.com/playlist.m3u" />
+          <button class="btn focusable" id="plLoad">Von URL laden</button>
+        </div>
+        <div class="form-row">
+          <button class="btn ghost focusable" id="plPick">Datei wählen …</button>
+          <button class="btn ghost focusable" id="plDemo">Demo-Kanäle hinzufügen</button>
+          <input type="file" id="plFile" accept=".m3u,.m3u8" hidden />
+        </div>
+        <p class="hint">Neue Kanäle werden hinzugefügt, doppelte URLs übersprungen. Schlägt das URL-Laden fehl (CORS), die Datei direkt importieren.</p>
+        <p class="hint" id="importMsg"></p>
+      </div>
+
+      <div class="panel">
+        <h3 id="formTitle">Kanal hinzufügen</h3>
+        <form id="chForm">
+          <div class="form-grid">
+            <input class="focusable" name="name" placeholder="Name" required />
+            <input class="focusable" name="group" placeholder="Kategorie" />
+            <input class="focusable" name="url" placeholder="Stream-URL (m3u8)" required />
+            <input class="focusable" name="logo" placeholder="Logo-URL (optional)" />
+          </div>
+          <div class="form-actions">
+            <button class="btn focusable" type="submit">Speichern</button>
+            <button class="btn ghost focusable" type="button" id="formCancel">Abbrechen</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="list-head">
+          <h3>Alle Kanäle (<span id="count">0</span>)</h3>
+          <button class="btn ghost focusable" id="clearAll">Alle entfernen</button>
+        </div>
+        <div id="manageList"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="player">
+  <video id="video" playsinline></video>
+  <div id="status"></div>
+  <div id="osd">
+    <div class="eyebrow" id="pGroup"></div>
+    <h3 id="pTitle"></h3>
+    <div class="osd-btns">
+      <button class="btn ghost" onclick="zap(-1)">▲ Vorheriger</button>
+      <button class="btn ghost" onclick="zap(1)">▼ Nächster</button>
+      <button class="btn ghost" id="pFav" onclick="toggleFav(currentId)">☆ Favorit</button>
+      <button class="btn" onclick="closePlayer()">✕ Schließen</button>
+    </div>
+    <p class="hint">▲▼ Kanal wechseln · OK Pause/Play · Zurück schließt den Player</p>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const initials = n => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const uid = () => 'c' + Math.random().toString(36).slice(2, 10);
+
+const KEY_CH = 'streamtv.channels', KEY_FAV = 'streamtv.favs';
+const NAV_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+const DEMO = `#EXTM3U
+#EXTINF:-1 group-title="Nachrichten",Demo Nachrichten 1
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 group-title="Nachrichten",Demo Nachrichten 2
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 group-title="Sport",Demo Sport 1
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 group-title="Sport",Demo Sport 2
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 group-title="Filme",Demo Film Kanal
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 group-title="Filme",Demo Serien Kanal
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`;
+
+let state = { channels: [], favs: [], cat: 'Alle' };
+let playerOpen = false, currentId = null, hls = null, osdTimer = null, lastFocus = null, editId = null;
+
+/* ---------- Daten ---------- */
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY_CH);
+    state.channels = raw === null ? parseM3U(DEMO) : JSON.parse(raw);
+    state.favs = JSON.parse(localStorage.getItem(KEY_FAV) || '[]');
+  } catch (e) { state.channels = parseM3U(DEMO); }
+}
+function persist() {
+  try {
+    localStorage.setItem(KEY_CH, JSON.stringify(state.channels));
+    localStorage.setItem(KEY_FAV, JSON.stringify(state.favs));
+  } catch (e) {}
+}
+function parseM3U(text) {
+  const out = []; let meta = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#EXTINF')) {
+      const attr = k => (line.match(new RegExp(k + '="([^"]*)"')) || [])[1] || '';
+      meta = {
+        name: line.slice(line.lastIndexOf(',') + 1).trim() || 'Unbenannt',
+        group: attr('group-title') || 'Sonstige',
+        logo: attr('tvg-logo')
+      };
+    } else if (!line.startsWith('#') && meta) {
+      out.push({ id: uid(), ...meta, url: line });
+      meta = null;
+    }
+  }
+  return out;
+}
+const byId = id => state.channels.find(c => c.id === id);
+const isFav = id => state.favs.includes(id);
+const favList = () => state.favs.map(byId).filter(Boolean);
+function groups() {
+  const m = new Map();
+  for (const c of state.channels) {
+    if (!m.has(c.group)) m.set(c.group, []);
+    m.get(c.group).push(c);
+  }
+  return m;
+}
+function toggleFav(id) {
+  if (!id) return;
+  state.favs = isFav(id) ? state.favs.filter(x => x !== id) : [...state.favs, id];
+  refresh();
+  if (playerOpen) $('#pFav').textContent = isFav(id) ? '★ Favorit' : '☆ Favorit';
+}
+function addChannels(list) {
+  const urls = new Set(state.channels.map(c => c.url));
+  let n = 0;
+  for (const c of list) if (!urls.has(c.url)) { urls.add(c.url); state.channels.push(c); n++; }
+  $('#importMsg').textContent = `${n} Kanäle hinzugefügt.`;
+  refresh();
+}
+
+/* ---------- Rendering ---------- */
+function cardHTML(c) {
+  return `<div class="card focusable" tabindex="0" data-card="${esc(c.id)}">
+    <span class="ini">${esc(initials(c.name))}</span>
+    ${c.logo ? `<img src="${esc(c.logo)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+    <button class="star ${isFav(c.id) ? 'on' : ''}" tabindex="-1" data-fav="${esc(c.id)}" aria-label="Favorit">★</button>
+    <span class="name">${esc(c.name)}</span>
+  </div>`;
+}
+function renderChips() {
+  const names = ['Alle', 'Favoriten', ...groups().keys()];
+  $('#chips').innerHTML = names.map(n =>
+    `<button class="chip focusable ${state.cat === n ? 'active' : ''}" data-cat="${esc(n)}">${esc(n)}</button>`
+  ).join('');
+}
+function renderHome() {
+  renderChips();
+  const favs = favList();
+  const feat = favs[0] || state.channels[0];
+  $('#hero').innerHTML = feat
+    ? `<div class="hero-content">
+         <div class="eyebrow">Live · ${esc(feat.group)}</div>
+         <h1>${esc(feat.name)}</h1>
+         <p>${isFav(feat.id) ? 'Dein Favorit' : 'Jetzt im Programm'}</p>
+         <button class="btn focusable" data-card="${esc(feat.id)}">▶ Abspielen</button>
+       </div>`
+    : `<div class="hero-content"><h1>Keine Kanäle</h1><p>Lade eine Playlist unter „Kanäle“.</p></div>`;
+
+  const rail = (title, list) => list.length
+    ? `<section class="row"><h2>${esc(title)}<small>${list.length}</small></h2>
+         <div class="rail">${list.map(cardHTML).join('')}</div></section>`
+    : '';
+  let rows = '';
+  if (state.cat === 'Alle') {
+    rows += rail('Meine Favoriten', favs);
+    for (const [g, list] of groups()) rows += rail(g, list);
+  } else if (state.cat === 'Favoriten') {
+    rows += rail('Meine Favoriten', favs);
+  } else {
+    rows += rail(state.cat, state.channels.filter(c => c.group === state.cat));
+  }
+  $('#homeRows').innerHTML = rows || `<p class="empty">Keine Kanäle in dieser Kategorie.</p>`;
+}
+function renderSearch() {
+  const q = $('#q').value.trim().toLowerCase();
+  const res = q ? state.channels.filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q)) : [];
+  $('#searchGrid').innerHTML = !q ? `<p class="empty">Name oder Kategorie eingeben.</p>`
+    : res.length ? res.map(cardHTML).join('') : `<p class="empty">Keine Treffer.</p>`;
+}
+function renderFavs() {
+  const f = favList();
+  $('#favGrid').innerHTML = f.length ? f.map(cardHTML).join('')
+    : `<p class="empty">Noch keine Favoriten. Stern auf einer Karte oder Taste „f“ drücken.</p>`;
+}
+function renderManage() {
+  $('#count').textContent = state.channels.length;
+  $('#manageList').innerHTML = state.channels.length ? state.channels.map(c => `
+    <div class="item">
+      <div class="meta"><b>${esc(c.name)}</b><small>${esc(c.group)} · ${esc(c.url)}</small></div>
+      <div class="actions">
+        <button class="focusable" data-act="fav" data-id="${esc(c.id)}">${isFav(c.id) ? '★' : '☆'}</button>
+        <button class="focusable" data-act="edit" data-id="${esc(c.id)}">Bearbeiten</button>
+        <button class="focusable" data-act="del" data-id="${esc(c.id)}">Löschen</button>
+      </div>
+    </div>`).join('') : `<p class="empty">Keine Kanäle vorhanden.</p>`;
+}
+function renderAll() { renderHome(); renderSearch(); renderFavs(); renderManage(); }
+function refresh() {
+  persist();
+  const key = document.activeElement?.dataset?.card;
+  renderAll();
+  if (key) document.querySelector(`[data-card="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+}
+
+/* ---------- Views ---------- */
+function show(view) {
+  $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
+  $$('nav [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  window.scrollTo(0, 0);
+  $('#view-' + view + ' .focusable')?.focus({ preventScroll: true });
+}
+
+/* ---------- Player ---------- */
+function loadStream(url) {
+  const v = $('#video');
+  stopStream();
+  setStatus('Lädt …');
+  if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
+    const h = new Hls({ enableWorker: true });
+    h.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
+    h.on(Hls.Events.ERROR, (_, d) => {
+      if (d.fatal) { setStatus('Stream nicht erreichbar'); stopStream(); }
+    });
+    h.loadSource(url);
+    h.attachMedia(v);
+    hls = h;
+  } else {
+    v.src = url;
+    v.play().catch(() => {});
+  }
+}
+function stopStream() {
+  const v = $('#video');
+  v.pause();
+  if (hls) { hls.destroy(); hls = null; }
+  v.removeAttribute('src');
+  v.load();
+}
+function setStatus(t) { $('#status').textContent = t; }
+function showOsd() {
+  const o = $('#osd');
+  o.classList.remove('hide');
+  clearTimeout(osdTimer);
+  osdTimer = setTimeout(() => o.classList.add('hide'), 4000);
+}
+function openPlayer(id) {
+  const ch = byId(id);
+  if (!ch) return;
+  if (!playerOpen) {
+    lastFocus = document.activeElement;
+    playerOpen = true;
+    history.pushState({ player: 1 }, '');
+    $('#player').classList.add('open');
+    document.activeElement?.blur();
+  }
+  currentId = id;
+  $('#pTitle').textContent = ch.name;
+  $('#pGroup').textContent = ch.group;
+  $('#pFav').textContent = isFav(id) ? '★ Favorit' : '☆ Favorit';
+  loadStream(ch.url);
+  showOsd();
+}
+function closePlayer(fromPop) {
+  if (!playerOpen) return;
+  playerOpen = false;
+  stopStream();
+  $('#player').classList.remove('open');
+  if (!fromPop && history.state?.player) history.back();
+  lastFocus?.focus?.({ preventScroll: true });
+}
+function zap(step) {
+  const list = state.channels;
+  if (!list.length) return;
+  const i = list.findIndex(c => c.id === currentId);
+  openPlayer(list[(i + step + list.length) % list.length].id);
+}
+function togglePlay() {
+  const v = $('#video');
+  v.paused ? v.play().catch(() => {}) : v.pause();
+}
+function playerKey(e) {
+  const k = e.key;
+  if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k)) { e.preventDefault(); closePlayer(); return; }
+  if (['ArrowUp', 'ChannelUp', 'PageUp'].includes(k)) zap(-1);
+  else if (['ArrowDown', 'ChannelDown', 'PageDown'].includes(k)) zap(1);
+  else if (['Enter', ' ', 'MediaPlayPause'].includes(k)) togglePlay();
+  else if (['f', 'F'].includes(k)) toggleFav(currentId);
+  else return;
+  e.preventDefault();
+  showOsd();
+}
+window.addEventListener('popstate', () => closePlayer(true));
+
+const v = $('#video');
+v.addEventListener('waiting', () => setStatus('Puffern …'));
+v.addEventListener('playing', () => setStatus(''));
+v.addEventListener('error', () => { if (v.getAttribute('src')) setStatus('Stream nicht erreichbar'); });
+$('#player').addEventListener('click', e => { if (!e.target.closest('#osd')) { togglePlay(); showOsd(); } });
+
+/* ---------- Spatial navigation (Fernbedienung / Tastatur) ---------- */
+function navigate(dir) {
+  const all = [...document.querySelectorAll('.focusable')].filter(el => el.getClientRects().length && !el.disabled);
+  if (!all.length) return;
+  const cur = document.activeElement;
+  if (!all.includes(cur)) { all[0].focus({ preventScroll: true }); return; }
+  const c = cur.getBoundingClientRect();
+  const cx = c.left + c.width / 2, cy = c.top + c.height / 2;
+  let best = null, bestScore = Infinity;
+  for (const el of all) {
+    if (el === cur) continue;
+    const r = el.getBoundingClientRect();
+    const dx = (r.left + r.width / 2) - cx, dy = (r.top + r.height / 2) - cy;
+    let main, side;
+    if (dir === 'ArrowRight') { main = dx; side = dy; }
+    else if (dir === 'ArrowLeft') { main = -dx; side = dy; }
+    else if (dir === 'ArrowDown') { main = dy; side = dx; }
+    else { main = -dy; side = dx; }
+    if (main <= 5) continue;
+    const score = main + Math.abs(side) * 3;
+    if (score < bestScore) { bestScore = score; best = el; }
+  }
+  if (best) {
+    best.focus({ preventScroll: true });
+    best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  }
+}
+document.addEventListener('keydown', e => {
+  if (playerOpen) { playerKey(e); return; }
+  const a = document.activeElement;
+  const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA');
+  if (typing && !['ArrowUp', 'ArrowDown', 'Escape'].includes(e.key)) return;
+  if (NAV_KEYS.includes(e.key)) { e.preventDefault(); navigate(e.key); return; }
+  if (e.key === 'Enter' && a?.classList.contains('card')) { e.preventDefault(); a.click(); return; }
+  if ((e.key === 'f' || e.key === 'ContextMenu') && a?.dataset.card) { e.preventDefault(); toggleFav(a.dataset.card); }
+});
+
+/* ---------- Klicks (Delegation) ---------- */
+document.addEventListener('click', e => {
+  const t = e.target;
+  const fav = t.closest('[data-fav]');
+  if (fav) { e.stopPropagation(); toggleFav(fav.dataset.fav); return; }
+  const cat = t.closest('[data-cat]');
+  if (cat) {
+    state.cat = cat.dataset.cat;
+    renderHome();
+    $(`.chip[data-cat="${CSS.escape(state.cat)}"]`)?.focus({ preventScroll: true });
+    return;
+  }
+  const view = t.closest('[data-view]');
+  if (view) { show(view.dataset.view); return; }
+  const act = t.closest('[data-act]');
+  if (act) { manageAction(act.dataset.act, act.dataset.id); return; }
+  const card = t.closest('[data-card]');
+  if (card) openPlayer(card.dataset.card);
+});
+$('#q').addEventListener('input', renderSearch);
+
+/* ---------- Kanalverwaltung ---------- */
+const fld = n => $(`#chForm [name="${n}"]`);
+function resetForm() {
+  $('#chForm').reset();
+  editId = null;
+  $('#formTitle').textContent = 'Kanal hinzufügen';
+}
+function manageAction(act, id) {
+  const c = byId(id);
+  if (!c) return;
+  if (act === 'fav') return toggleFav(id);
+  if (act === 'del') {
+    if (!confirm(`„${c.name}“ löschen?`)) return;
+    state.channels = state.channels.filter(x => x.id !== id);
+    state.favs = state.favs.filter(x => x !== id);
+    return refresh();
+  }
+  if (act === 'edit') {
+    editId = id;
+    fld('name').value = c.name;
+    fld('group').value = c.group;
+    fld('url').value = c.url;
+    fld('logo').value = c.logo || '';
+    $('#formTitle').textContent = 'Kanal bearbeiten';
+    $('#chForm').scrollIntoView({ behavior: 'smooth' });
+    fld('name').focus();
+  }
+}
+$('#chForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const f = new FormData(e.target);
+  const data = {
+    name: (f.get('name') || '').trim(),
+    group: (f.get('group') || '').trim() || 'Sonstige',
+    url: (f.get('url') || '').trim(),
+    logo: (f.get('logo') || '').trim()
+  };
+  if (!data.name || !data.url) return;
+  if (editId) {
+    const c = byId(editId);
+    if (c) Object.assign(c, data);
+  } else {
+    state.channels.push({ id: uid(), ...data });
+  }
+  resetForm();
+  refresh();
+});
+$('#formCancel').addEventListener('click', resetForm);
+
+async function importUrl() {
+  const url = $('#plUrl').value.trim();
+  if (!url) return;
+  $('#importMsg').textContent = 'Lade Playlist …';
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    addChannels(parseM3U(await r.text()));
+  } catch (err) {
+    $('#importMsg').textContent = `Laden fehlgeschlagen (${err.message}). Evtl. CORS-Sperre – bitte Datei importieren.`;
+  }
+}
+$('#plLoad').addEventListener('click', importUrl);
+$('#plPick').addEventListener('click', () => $('#plFile').click());
+$('#plFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  file.text().then(t => addChannels(parseM3U(t)));
+  e.target.value = '';
+});
+$('#plDemo').addEventListener('click', () => addChannels(parseM3U(DEMO)));
+$('#clearAll').addEventListener('click', () => {
+  if (!confirm('Alle Kanäle und Favoriten entfernen?')) return;
+  state.channels = [];
+  state.favs = [];
+  refresh();
+});
+
+/* ---------- Start ---------- */
+load();
+persist();
+renderAll();
+show('home');
+</script>
+</body>
+</html>
