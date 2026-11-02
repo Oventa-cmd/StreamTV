@@ -1,0 +1,240 @@
+/* ============ StreamTV – Apple-inspiriertes Design ============ */
+@font-face{font-family:Inter;font-weight:400;font-display:swap;src:url(fonts/inter-400.woff2) format("woff2")}
+@font-face{font-family:Inter;font-weight:500;font-display:swap;src:url(fonts/inter-500.woff2) format("woff2")}
+@font-face{font-family:Inter;font-weight:600;font-display:swap;src:url(fonts/inter-600.woff2) format("woff2")}
+@font-face{font-family:Inter;font-weight:700;font-display:swap;src:url(fonts/inter-700.woff2) format("woff2")}
+@font-face{font-family:Inter;font-weight:800;font-display:swap;src:url(fonts/inter-800.woff2) format("woff2")}
+
+:root{
+  --bg:#000;--txt:#f5f5f7;--mut:rgba(235,235,245,.6);--mut2:rgba(235,235,245,.38);
+  --glass:rgba(255,255,255,.08);--glass2:rgba(255,255,255,.14);--line:rgba(255,255,255,.08);
+  --accent:#0a84ff;--red:#ff453a;--green:#30d158;--yellow:#ffd60a;
+  --r-sm:10px;--r:16px;--r-lg:22px;
+  --ease:cubic-bezier(.2,.8,.2,1);
+  --pad:4.5%;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;-webkit-font-smoothing:antialiased}
+@media (min-width:1600px){html{font-size:20px}}
+body{
+  background:radial-gradient(1100px 520px at 75% -8%,rgba(94,92,230,.22),transparent 70%),
+             radial-gradient(900px 500px at -5% 10%,rgba(10,132,255,.12),transparent 70%),var(--bg);
+  background-attachment:fixed;color:var(--txt);
+  font-family:Inter,-apple-system,"SF Pro Display","Segoe UI",Roboto,sans-serif;
+  min-height:100vh;overflow-x:hidden;letter-spacing:-.011em
+}
+button,input{font:inherit;color:inherit;letter-spacing:inherit}
+button{background:none;border:0;cursor:pointer}
+:focus{outline:none}
+.hidden{display:none!important}
+
+/* ---------- Kopfzeile ---------- */
+header{
+  position:sticky;top:0;z-index:30;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:1rem;
+  padding:.85rem var(--pad);
+  background:linear-gradient(rgba(0,0,0,.72),rgba(0,0,0,.45));
+  -webkit-backdrop-filter:blur(28px) saturate(170%);backdrop-filter:blur(28px) saturate(170%);
+  border-bottom:1px solid var(--line)
+}
+.brand{display:flex;align-items:center;gap:.55rem;font-weight:700;font-size:1.2rem;letter-spacing:-.02em}
+.brand-icon{width:1.9rem;height:1.9rem;border-radius:.55rem;display:grid;place-items:center;font-size:.8rem;
+  background:linear-gradient(145deg,#ff375f,#ff453a 50%,#ff9f0a);box-shadow:0 4px 14px rgba(255,69,58,.35)}
+.tabbar{display:flex;gap:.2rem;padding:.3rem;border-radius:999px;background:var(--glass);border:1px solid var(--line)}
+.tabbar button{padding:.45rem 1rem;border-radius:999px;color:var(--mut);font-weight:600;font-size:.92rem;transition:all .25s var(--ease)}
+.tabbar button.active{color:var(--txt);background:var(--glass2)}
+.tabbar button:focus{background:#fff;color:#000;transform:scale(1.06);box-shadow:0 6px 20px rgba(0,0,0,.4)}
+.status{display:flex;justify-content:flex-end;align-items:center;gap:.7rem;color:var(--mut);font-weight:600;font-size:.95rem}
+.pill{display:inline-flex;align-items:center;gap:.35rem;padding:.3rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:var(--glass);border:1px solid var(--line)}
+.pill .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--mut2)}
+.pill.on .dot{background:var(--green);box-shadow:0 0 8px var(--green)}
+.pill.off{color:#ffb4ae}.pill.off .dot{background:var(--red)}
+button.pill:focus{background:#fff;color:#000}
+
+/* ---------- Ansichten ---------- */
+.view{display:none;padding-bottom:4rem;animation:fade .35s var(--ease)}
+.view.active{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.pad{padding:1.6rem var(--pad) 0}
+.large-title{font-size:2.1rem;font-weight:800;letter-spacing:-.03em;margin-bottom:1.1rem}
+.empty{color:var(--mut);padding:1.2rem var(--pad)}
+.hint{color:var(--mut2);font-size:.82rem;margin-top:.55rem;line-height:1.45}
+.eyebrow{color:var(--mut);font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em}
+.section-label{display:flex;align-items:baseline;gap:.6rem;padding:0 var(--pad);margin:2rem 0 .2rem;font-size:1.3rem;font-weight:700;letter-spacing:-.02em}
+.section-label small{color:var(--mut2);font-weight:500;font-size:.9rem}
+
+/* ---------- Hero ---------- */
+.hero{position:relative;height:min(58vh,560px);display:flex;align-items:flex-end;padding:0 var(--pad) 2.6rem;overflow:hidden;
+  background:radial-gradient(circle at 78% 28%,#2c2a63,#000 70%)}
+.hero-bg{position:absolute;inset:0;background-size:cover;background-position:center 20%;opacity:0;transition:opacity .9s var(--ease);transform:scale(1.03)}
+.hero-bg.show{opacity:1}
+.hero::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,#000 0%,rgba(0,0,0,.55) 35%,transparent 70%),linear-gradient(to right,rgba(0,0,0,.85),transparent 60%)}
+.hero-content{position:relative;z-index:1;max-width:min(620px,60%)}
+.hero-logo{max-width:22rem;max-height:7rem;object-fit:contain;object-position:left bottom;margin:.5rem 0 .8rem;display:block;filter:drop-shadow(0 4px 18px rgba(0,0,0,.6))}
+.hero h1{font-size:clamp(2rem,4.2vw,3.4rem);font-weight:800;letter-spacing:-.035em;line-height:1.05;margin:.45rem 0 .7rem}
+.hero .meta{color:var(--mut);font-weight:500;margin-bottom:.7rem}
+.hero p.ov{color:rgba(235,235,245,.78);line-height:1.5;margin-bottom:1.3rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hero-dots{position:absolute;right:var(--pad);bottom:2.8rem;z-index:1;display:flex;gap:.4rem}
+.hero-dots i{width:.45rem;height:.45rem;border-radius:50%;background:rgba(255,255,255,.3);transition:all .3s}
+.hero-dots i.on{background:#fff;width:1.3rem;border-radius:1rem}
+
+/* ---------- Buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem 1.5rem;border-radius:999px;font-weight:700;font-size:.95rem;
+  background:var(--glass2);color:var(--txt);border:1px solid var(--line);transition:transform .25s var(--ease),background .25s,box-shadow .25s}
+.btn.primary{background:#fff;color:#000;border-color:transparent}
+.btn.small{padding:.45rem .95rem;font-size:.82rem}
+.btn:focus{transform:scale(1.07);background:#fff;color:#000;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.btn:disabled{opacity:.5}
+.btn-row{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center}
+
+/* ---------- Chips ---------- */
+.chips{display:flex;gap:.55rem;overflow-x:auto;padding:.8rem var(--pad) .4rem;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;padding:.5rem 1.05rem;border-radius:999px;background:var(--glass);border:1px solid var(--line);white-space:nowrap;color:var(--mut);font-weight:600;font-size:.88rem;transition:all .25s var(--ease)}
+.chip.active{background:var(--glass2);color:var(--txt)}
+.chip:focus{background:#fff;color:#000;transform:scale(1.07)}
+
+/* ---------- Reihen & Raster ---------- */
+.rail{display:flex;gap:1.1rem;overflow-x:auto;padding:1rem var(--pad) 1.4rem;scroll-behavior:smooth;scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:1.6rem 1.2rem;padding:1rem var(--pad)}
+
+/* Kanal-Kachel */
+.tile{position:relative;flex:0 0 auto;width:13rem;text-align:left;cursor:pointer}
+.grid .tile{width:100%}
+.tile .art{position:relative;aspect-ratio:16/9;border-radius:var(--r);overflow:hidden;
+  background:linear-gradient(150deg,#2c2c30,#18181b);box-shadow:0 4px 14px rgba(0,0,0,.35);
+  transition:transform .35s var(--ease),box-shadow .35s var(--ease)}
+.tile .art::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(135deg,rgba(255,255,255,.18),transparent 45%);opacity:0;transition:opacity .35s}
+.tile .ini{position:absolute;inset:0;display:grid;place-items:center;font-size:1.7rem;font-weight:800;color:rgba(255,255,255,.28);letter-spacing:-.02em}
+.tile img.logo{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:16% 18%}
+.tile .live{position:absolute;left:.55rem;top:.55rem;padding:.12rem .45rem;border-radius:.4rem;font-size:.62rem;font-weight:800;letter-spacing:.06em;background:rgba(255,69,58,.92);color:#fff}
+.tile .star{position:absolute;top:.45rem;right:.45rem;z-index:2;width:1.9rem;height:1.9rem;border-radius:50%;font-size:.95rem;color:rgba(255,255,255,.45);
+  background:rgba(0,0,0,.35);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.tile .star.on{color:var(--yellow)}
+.tile .caption{margin-top:.6rem;font-size:.88rem;font-weight:600;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .25s,transform .35s var(--ease)}
+.tile .sub{font-size:.76rem;color:var(--mut2);margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile:focus .art,.tile:hover .art{transform:scale(1.09) translateY(-.25rem);box-shadow:0 0 0 3px rgba(255,255,255,.92),0 22px 44px rgba(0,0,0,.7)}
+.tile:focus .art::after{opacity:1}
+.tile:focus .caption{color:var(--txt);transform:translateY(.35rem)}
+.tile.more .art{display:grid;place-items:center;background:var(--glass);border:1px dashed rgba(255,255,255,.2)}
+.tile.more .art span{font-weight:700;color:var(--txt)}
+
+/* Serien-Kachel (TMDB) */
+.tile.show{width:17rem}
+.tile.show .art{background:#111}
+.tile.show img.bd{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tile.show .shade{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.85),transparent 55%)}
+.tile.show .t{position:absolute;left:.8rem;right:.8rem;bottom:.65rem;font-weight:700;font-size:.98rem;letter-spacing:-.015em;text-shadow:0 2px 10px rgba(0,0,0,.6);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tile.show .rank{position:absolute;left:.55rem;top:.2rem;font-size:3.2rem;font-weight:800;letter-spacing:-.06em;color:#fff;opacity:.92;text-shadow:0 4px 18px rgba(0,0,0,.6)}
+.skeleton .art{background:linear-gradient(100deg,#141416 30%,#222226 50%,#141416 70%);background-size:300% 100%;animation:shimmer 1.4s infinite}
+@keyframes shimmer{from{background-position:100% 0}to{background-position:-100% 0}}
+
+/* ---------- Formulare & Einstellungen (iOS-Stil) ---------- */
+.search{width:100%;max-width:680px;padding:.95rem 1.2rem .95rem 2.8rem;border-radius:var(--r);border:1px solid var(--line);font-size:1.05rem;
+  background:var(--glass) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%23999' stroke-width='2.2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 1rem center;transition:box-shadow .25s,background-color .25s}
+.search:focus,.field:focus{box-shadow:0 0 0 3px rgba(10,132,255,.85);background-color:rgba(255,255,255,.12)}
+.settings{max-width:900px}
+.group-title{color:var(--mut2);font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:1.8rem 0 .55rem .9rem}
+.group{background:rgba(28,28,30,.85);border-radius:var(--r);border:1px solid var(--line);overflow:hidden}
+.group-foot{color:var(--mut2);font-size:.8rem;margin:.55rem .9rem 0;line-height:1.45}
+.row-item{display:flex;align-items:center;gap:1rem;padding:.85rem 1.1rem;min-height:3.3rem;border-top:1px solid var(--line);flex-wrap:wrap}
+.row-item:first-child{border-top:0}
+.row-item .meta{flex:1 1 220px;min-width:0}
+.row-item .meta b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-item .meta small{display:block;color:var(--mut);font-size:.8rem;margin-top:.12rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-item .meta small.err{color:#ff8a80}
+.row-item .actions{display:flex;gap:.45rem;flex-wrap:wrap}
+.field{width:100%;padding:.8rem 1rem;border-radius:var(--r-sm);border:0;background:rgba(255,255,255,.07);transition:box-shadow .25s,background-color .25s}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.6rem;padding:1rem 1.1rem;border-top:1px solid var(--line)}
+.form-grid:first-child{border-top:0}
+.form-actions{display:flex;gap:.6rem;flex-wrap:wrap;padding:0 1.1rem 1rem}
+.seg{display:inline-flex;padding:.22rem;border-radius:var(--r-sm);background:rgba(118,118,128,.24)}
+.seg button{padding:.45rem 1.1rem;border-radius:.5rem;font-weight:600;font-size:.88rem;color:var(--mut);transition:all .25s var(--ease)}
+.seg button.sel{background:#636366;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.seg button:focus{background:#fff;color:#000}
+.switch{display:flex;align-items:center;justify-content:space-between;gap:1rem;width:100%;text-align:left;padding:.85rem 1.1rem;min-height:3.3rem;border-top:1px solid var(--line);transition:background .2s}
+.switch:first-child{border-top:0}
+.switch .lbl b{display:block;font-weight:600}
+.switch .lbl small{display:block;color:var(--mut);font-size:.8rem;margin-top:.12rem}
+.switch .knob{flex:0 0 auto;width:3.1rem;height:1.9rem;border-radius:999px;background:rgba(120,120,128,.36);position:relative;transition:background .25s}
+.switch .knob::after{content:"";position:absolute;top:.15rem;left:.15rem;width:1.6rem;height:1.6rem;border-radius:50%;background:#fff;box-shadow:0 3px 8px rgba(0,0,0,.3);transition:transform .25s var(--ease)}
+.switch.on .knob{background:var(--green)}
+.switch.on .knob::after{transform:translateX(1.2rem)}
+.switch:focus,.row-btn:focus{background:rgba(255,255,255,.1)}
+.row-btn{display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left;padding:.85rem 1.1rem;min-height:3.3rem;border-top:1px solid var(--line);font-weight:600}
+.row-btn:first-child{border-top:0}
+.row-btn.danger{color:var(--red)}
+.row-btn .chev{color:var(--mut2)}
+.mini{padding:.4rem .8rem;border-radius:999px;background:var(--glass2);font-size:.8rem;font-weight:600;transition:all .2s var(--ease)}
+.mini:focus{background:#fff;color:#000;transform:scale(1.06)}
+
+/* ---------- Detail-Sheet ---------- */
+.sheet{position:fixed;inset:0;z-index:45;background:#000;display:none;overflow:hidden}
+.sheet.open{display:block;animation:fade .35s var(--ease)}
+.sheet .bd{position:absolute;inset:0;background-size:cover;background-position:center top}
+.sheet .bd::after{content:"";position:absolute;inset:0;background:linear-gradient(to right,#000 8%,rgba(0,0,0,.75) 40%,rgba(0,0,0,.15) 75%),linear-gradient(to top,#000,transparent 45%)}
+.sheet .inner{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;padding:3rem var(--pad) 3.2rem;max-width:min(760px,62%)}
+.sheet .logo-img{max-width:24rem;max-height:8rem;object-fit:contain;object-position:left bottom;margin-bottom:1rem}
+.sheet h1{font-size:clamp(2rem,4vw,3.2rem);font-weight:800;letter-spacing:-.035em;line-height:1.05;margin-bottom:.8rem}
+.sheet .meta{color:var(--mut);font-weight:600;margin-bottom:.5rem}
+.sheet .reason{color:var(--yellow);font-weight:600;font-size:.9rem;margin-bottom:.6rem}
+.sheet .ov{color:rgba(235,235,245,.82);line-height:1.55;margin:.6rem 0 1.1rem;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.prov{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1.3rem}
+.prov span{padding:.3rem .7rem;border-radius:999px;background:var(--glass2);font-size:.8rem;font-weight:600}
+
+/* ---------- Toast ---------- */
+#toast{position:fixed;left:50%;top:1.2rem;transform:translate(-50%,0);z-index:90;padding:.75rem 1.3rem;border-radius:999px;font-weight:600;font-size:.92rem;max-width:90vw;
+  background:rgba(44,44,46,.82);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);
+  border:1px solid var(--line);box-shadow:0 12px 40px rgba(0,0,0,.5);transition:opacity .35s,transform .35s var(--ease)}
+#toast.off{opacity:0;transform:translate(-50%,-1.5rem);pointer-events:none}
+
+/* ---------- Player ---------- */
+#player{position:fixed;inset:0;z-index:60;background:#000;display:none}
+#player.open{display:block}
+#video{width:100%;height:100%;background:#000;object-fit:contain}
+#status{position:absolute;top:1.3rem;left:var(--pad);padding:.4rem .9rem;border-radius:999px;font-size:.88rem;font-weight:600;
+  background:rgba(30,30,32,.7);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+#status:empty{display:none}
+#osd{position:absolute;left:var(--pad);right:var(--pad);bottom:1.8rem;display:flex;align-items:center;gap:1.2rem;padding:1rem 1.3rem;border-radius:var(--r-lg);
+  background:rgba(30,30,32,.62);-webkit-backdrop-filter:blur(34px) saturate(180%);backdrop-filter:blur(34px) saturate(180%);
+  border:1px solid var(--line);box-shadow:0 18px 50px rgba(0,0,0,.5);transition:opacity .45s var(--ease),transform .45s var(--ease)}
+#osd.hide{opacity:0;transform:translateY(1rem);pointer-events:none}
+#osd .osd-logo{width:5.5rem;aspect-ratio:16/9;border-radius:var(--r-sm);background:rgba(255,255,255,.08);display:grid;place-items:center;overflow:hidden;flex:0 0 auto;font-weight:800;color:rgba(255,255,255,.4)}
+#osd .osd-logo img{width:100%;height:100%;object-fit:contain;padding:10%}
+#osd .osd-txt{flex:1;min-width:0}
+#osd h3{font-size:1.35rem;font-weight:700;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#osd .osd-sub{color:var(--mut);font-size:.85rem;margin-top:.15rem}
+#osd .osd-btns{display:flex;gap:.5rem;flex-wrap:wrap}
+#osd .osd-btns .btn{padding:.55rem 1rem;font-size:.85rem}
+
+/* ---------- Responsive ---------- */
+@media (max-width:900px){
+  header{grid-template-columns:auto 1fr;row-gap:.6rem}
+  .tabbar{grid-column:1/-1;grid-row:2;overflow-x:auto;justify-self:start;max-width:100%}
+  .status{grid-column:2;grid-row:1}
+  .hero-content,.sheet .inner{max-width:100%}
+}
+@media (max-width:600px){
+  .tabbar button{padding:.4rem .7rem;font-size:.85rem}
+  .tile{width:10rem}.tile.show{width:13rem}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(9rem,1fr))}
+  .large-title{font-size:1.7rem}
+  #osd{flex-wrap:wrap}
+}
+@media (min-width:1600px){.tile{width:15rem}.tile.show{width:20rem}}
+
+/* Stern nur bei Favoriten oder Maus-Hover zeigen */
+.tile .star{opacity:0;transition:opacity .2s}
+.tile .star.on,.tile:hover .star{opacity:1}
+
+/* Feinschliff für 960-px-Viewport (Fire TV) */
+.pill{white-space:nowrap}
+@media (max-width:1100px){
+  header{gap:.8rem;padding:.7rem var(--pad)}
+  .brand{font-size:1.05rem}.brand-icon{width:1.7rem;height:1.7rem}
+  .tabbar button{padding:.4rem .8rem;font-size:.86rem}
+  .status{gap:.5rem;font-size:.88rem}
+}
+.sheet .inner{max-width:min(860px,72%)}
