@@ -34,6 +34,7 @@ class MainActivity : Activity() {
             // Erlaubt Streams & Playlists ohne CORS-Header (Seite läuft lokal aus den Assets)
             allowUniversalAccessFromFileURLs = true
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            textZoom = 100
         }
 
         web.webViewClient = WebViewClient()

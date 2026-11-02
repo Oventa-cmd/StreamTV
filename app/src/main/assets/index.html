@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>StreamTV – IPTV Player</title>
+<title>StreamTV</title>
 <script src="hls.min.js"></script>
+<script src="mpegts.js"></script>
 <style>
 :root{--bg:#141414;--panel:#1f1f1f;--card:#2b2b2b;--red:#e50914;--txt:#fff;--mut:#a3a3a3}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -15,39 +16,41 @@ button,input{font:inherit;color:inherit}
 button{background:none;border:0;cursor:pointer}
 :focus-visible{outline:3px solid #fff;outline-offset:3px}
 
-header{position:fixed;top:0;left:0;right:0;z-index:20;display:flex;align-items:center;gap:2rem;padding:1rem 4%;background:linear-gradient(to bottom,rgba(0,0,0,.92),transparent)}
+/* Header liegt im normalen Fluss (sticky) -> nichts kann sich mehr darunter schieben */
+header{position:sticky;top:0;z-index:20;display:flex;align-items:center;flex-wrap:wrap;gap:.5rem 2rem;padding:.9rem 4%;background:rgba(20,20,20,.97);box-shadow:0 2px 12px rgba(0,0,0,.5)}
 .logo{color:var(--red);font-weight:900;font-size:1.5rem;letter-spacing:.04em}
 nav{display:flex;flex-wrap:wrap;gap:.25rem}
 nav button{color:var(--mut);padding:.4rem .75rem;border-radius:.3rem;font-weight:600}
 nav button:hover,nav button.active{color:#fff}
 nav button.active{background:rgba(255,255,255,.1)}
-main{padding-top:4.5rem}
-.view{display:none}
+.view{display:none;padding-bottom:3rem}
 .view.active{display:block}
-.pad{padding:0 4%}
+.pad{padding:1.5rem 4% 0}
 .section-title{font-size:1.6rem;margin-bottom:1rem}
 .empty{color:var(--mut);padding:2rem 4%}
 .hint{color:var(--mut);font-size:.85rem;margin-top:.5rem}
 .eyebrow{color:var(--mut);font-size:.85rem;text-transform:uppercase;letter-spacing:.08em}
 
-.chips{display:flex;gap:.6rem;overflow-x:auto;padding:.5rem 4% 0;scrollbar-width:none}
-.chip{padding:.45rem 1rem;border-radius:999px;background:var(--card);white-space:nowrap;color:var(--mut);font-size:.9rem}
+.chips{display:flex;gap:.6rem;overflow-x:auto;padding:1rem 4% .4rem;scrollbar-width:none}
+.chip{flex:0 0 auto;padding:.45rem 1rem;border-radius:999px;background:var(--card);white-space:nowrap;color:var(--mut);font-size:.9rem}
 .chip.active,.chip:hover{background:#fff;color:#000}
 
-.hero{position:relative;height:min(55vh,520px);display:flex;align-items:flex-end;padding:0 4% 3rem;background:radial-gradient(circle at 80% 30%,#4a0d1c,#141414 70%)}
+.hero{position:relative;height:min(42vh,420px);display:flex;align-items:flex-end;padding:0 4% 2.5rem;background:radial-gradient(circle at 80% 30%,#4a0d1c,#141414 70%)}
 .hero::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,var(--bg) 5%,transparent 60%)}
 .hero-content{position:relative;z-index:1;max-width:620px}
-.hero h1{font-size:clamp(1.8rem,4vw,3.2rem);margin:.4rem 0 .6rem}
+.hero h1{font-size:clamp(1.8rem,4vw,3rem);margin:.4rem 0 .6rem}
 .hero p{color:var(--mut);margin-bottom:1rem}
 
 .btn{display:inline-flex;gap:.5rem;align-items:center;padding:.7rem 1.4rem;border-radius:.3rem;font-weight:700;background:#fff;color:#000}
 .btn.ghost{background:rgba(109,109,110,.7);color:#fff}
+.btn.small{padding:.4rem .8rem;font-size:.85rem}
+.btn.sel{background:var(--red);color:#fff}
 
-.row{margin:1.5rem 0 .5rem}
-.row h2{font-size:1.15rem;padding:0 4%;margin-bottom:.6rem;font-weight:700}
+.row{margin:1.2rem 0 .3rem}
+.row h2{font-size:1.15rem;padding:0 4%;margin-bottom:.4rem;font-weight:700}
 .row h2 small{color:var(--mut);font-weight:400;margin-left:.4rem}
 .rail{display:flex;gap:.9rem;overflow-x:auto;padding:.6rem 4% 1rem;scroll-behavior:smooth;scrollbar-width:none}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:1.2rem;padding:0 4%}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:1.2rem;padding:.6rem 4%}
 
 .card{position:relative;flex:0 0 auto;width:12rem;aspect-ratio:16/9;border-radius:.4rem;background:var(--card);overflow:hidden;text-align:left;cursor:pointer;transition:transform .2s,box-shadow .2s}
 .card:focus,.card:hover{transform:scale(1.07);box-shadow:0 10px 30px rgba(0,0,0,.6);outline:3px solid #fff;outline-offset:2px}
@@ -57,21 +60,26 @@ main{padding-top:4.5rem}
 .card .name{position:absolute;left:0;right:0;bottom:0;padding:1.2rem .6rem .4rem;background:linear-gradient(transparent,rgba(0,0,0,.9));font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card .star{position:absolute;top:.4rem;right:.4rem;z-index:2;width:2rem;height:2rem;border-radius:50%;background:rgba(0,0,0,.6);color:#888;font-size:1rem}
 .card .star.on{color:#facc15}
+.card.more{display:grid;place-items:center;text-align:center;color:#fff;font-weight:700;background:#222;border:1px dashed #555}
 
-.search{width:100%;max-width:640px;padding:.9rem 1.1rem;border-radius:.4rem;border:1px solid #444;background:#222;font-size:1.05rem;margin-bottom:1.5rem}
+.search{width:100%;max-width:640px;padding:.9rem 1.1rem;border-radius:.4rem;border:1px solid #444;background:#222;font-size:1.05rem;margin-bottom:1rem}
 .panel{background:var(--panel);border-radius:.6rem;padding:1.2rem;margin-bottom:1.2rem}
 .panel h3{margin-bottom:.8rem}
-.form-row{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem}
-.form-row input,.form-grid input{flex:1 1 220px;padding:.7rem .9rem;border-radius:.3rem;border:1px solid #444;background:#222}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.6rem;margin-bottom:.8rem}
-.form-actions{display:flex;gap:.6rem;flex-wrap:wrap}
+.form-grid input{padding:.7rem .9rem;border-radius:.3rem;border:1px solid #444;background:#222;width:100%}
+.form-actions,.toggle-row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-bottom:.8rem}
 .list-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem}
 .item{display:flex;align-items:center;gap:.8rem;padding:.6rem .4rem;border-bottom:1px solid #2a2a2a;flex-wrap:wrap}
-.item .meta{flex:1 1 200px;min-width:0}
+.item .meta{flex:1 1 220px;min-width:0}
 .item .meta b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .meta small{display:block;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .meta small.err{color:#f87171}
 .item .actions{display:flex;gap:.4rem;flex-wrap:wrap}
 .item .actions button{padding:.4rem .7rem;border-radius:.3rem;background:var(--card);font-size:.85rem}
+.hidden{display:none!important}
+
+#toast{position:fixed;left:50%;bottom:2rem;transform:translateX(-50%);z-index:80;background:#fff;color:#000;padding:.7rem 1.2rem;border-radius:.4rem;font-weight:600;box-shadow:0 6px 24px rgba(0,0,0,.5);transition:opacity .3s;max-width:90vw}
+#toast.off{opacity:0;pointer-events:none}
 
 #player{position:fixed;inset:0;z-index:50;background:#000;display:none}
 #player.open{display:block}
@@ -84,9 +92,9 @@ main{padding-top:4.5rem}
 .osd-btns{display:flex;gap:.6rem;flex-wrap:wrap}
 
 @media (max-width:700px){
-  header{gap:1rem;padding:.8rem 4%}
+  header{gap:.4rem 1rem;padding:.7rem 4%}
   nav button{padding:.3rem .5rem;font-size:.9rem}
-  .hero{height:52vh;padding-bottom:2rem}
+  .hero{height:40vh;padding-bottom:1.5rem}
   .rail .card{width:9.5rem}
   .grid{grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:.8rem}
 }
@@ -105,6 +113,7 @@ main{padding-top:4.5rem}
     <button class="focusable" data-view="search">Suche</button>
     <button class="focusable" data-view="favorites">Favoriten</button>
     <button class="focusable" data-view="manage">Kanäle</button>
+    <button class="focusable" data-view="settings">Einstellungen</button>
   </nav>
 </header>
 
@@ -119,43 +128,27 @@ main{padding-top:4.5rem}
     <div class="pad">
       <h2 class="section-title">Suche</h2>
       <input id="q" class="focusable search" type="search" placeholder="Kanal oder Kategorie suchen …" autocomplete="off" />
-      <div class="grid" id="searchGrid"></div>
+      <p class="hint" id="searchInfo"></p>
     </div>
+    <div class="grid" id="searchGrid"></div>
   </section>
 
   <section class="view" id="view-favorites">
-    <div class="pad">
-      <h2 class="section-title">Favoriten</h2>
-    </div>
+    <div class="pad"><h2 class="section-title">Favoriten</h2></div>
     <div class="grid" id="favGrid"></div>
   </section>
 
   <section class="view" id="view-manage">
     <div class="pad">
-      <h2 class="section-title">Kanalverwaltung</h2>
+      <h2 class="section-title">Kanäle</h2>
 
       <div class="panel">
-        <h3>Playlist importieren (M3U)</h3>
-        <div class="form-row">
-          <input id="plUrl" class="focusable" placeholder="https://example.com/playlist.m3u" />
-          <button class="btn focusable" id="plLoad">Von URL laden</button>
-        </div>
-        <div class="form-row">
-          <button class="btn ghost focusable" id="plPick">Datei wählen …</button>
-          <button class="btn ghost focusable" id="plDemo">Demo-Kanäle hinzufügen</button>
-          <input type="file" id="plFile" accept=".m3u,.m3u8" hidden />
-        </div>
-        <p class="hint">Neue Kanäle werden hinzugefügt, doppelte URLs übersprungen. Schlägt das URL-Laden fehl (CORS), die Datei direkt importieren.</p>
-        <p class="hint" id="importMsg"></p>
-      </div>
-
-      <div class="panel">
-        <h3 id="formTitle">Kanal hinzufügen</h3>
+        <h3 id="formTitle">Kanal manuell hinzufügen</h3>
         <form id="chForm">
           <div class="form-grid">
             <input class="focusable" name="name" placeholder="Name" required />
             <input class="focusable" name="group" placeholder="Kategorie" />
-            <input class="focusable" name="url" placeholder="Stream-URL (m3u8)" required />
+            <input class="focusable" name="url" placeholder="Stream-URL (m3u8 / ts)" required />
             <input class="focusable" name="logo" placeholder="Logo-URL (optional)" />
           </div>
           <div class="form-actions">
@@ -163,18 +156,77 @@ main{padding-top:4.5rem}
             <button class="btn ghost focusable" type="button" id="formCancel">Abbrechen</button>
           </div>
         </form>
+        <p class="hint">Playlists und Xtream-Zugänge fügst du unter „Einstellungen“ hinzu.</p>
       </div>
 
       <div class="panel">
         <div class="list-head">
           <h3>Alle Kanäle (<span id="count">0</span>)</h3>
-          <button class="btn ghost focusable" id="clearAll">Alle entfernen</button>
         </div>
+        <input id="mq" class="focusable search" type="search" placeholder="Liste filtern …" autocomplete="off" />
         <div id="manageList"></div>
       </div>
     </div>
   </section>
+
+  <section class="view" id="view-settings">
+    <div class="pad">
+      <h2 class="section-title">Einstellungen</h2>
+
+      <div class="panel">
+        <h3>Quelle hinzufügen</h3>
+        <div class="toggle-row">
+          <button class="btn small sel focusable" id="typeM3u" type="button">M3U-Link</button>
+          <button class="btn small ghost focusable" id="typeXt" type="button">Xtream Codes</button>
+        </div>
+
+        <div id="formM3u">
+          <div class="form-grid">
+            <input class="focusable" id="m3uName" placeholder="Name (z. B. Mein Anbieter)" />
+            <input class="focusable" id="m3uUrl" placeholder="https://…/playlist.m3u" />
+          </div>
+          <div class="form-actions">
+            <button class="btn focusable" id="m3uAdd" type="button">Hinzufügen &amp; laden</button>
+          </div>
+        </div>
+
+        <div id="formXt" class="hidden">
+          <div class="form-grid">
+            <input class="focusable" id="xtName" placeholder="Name (z. B. Mein Anbieter)" />
+            <input class="focusable" id="xtServer" placeholder="Server, z. B. http://server.tv:8080" />
+            <input class="focusable" id="xtUser" placeholder="Benutzername" autocomplete="off" />
+            <input class="focusable" id="xtPass" placeholder="Passwort" type="password" autocomplete="off" />
+          </div>
+          <div class="form-actions">
+            <button class="btn ghost focusable" id="xtFormat" type="button" data-format="m3u8">Format: HLS (m3u8)</button>
+            <button class="btn focusable" id="xtAdd" type="button">Anmelden &amp; laden</button>
+          </div>
+          <p class="hint">Lädt alle Live-TV-Kanäle mit Kategorien. Ruckelt HLS oder bleibt schwarz, das Format auf MPEG-TS umstellen.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="list-head">
+          <h3>Meine Quellen</h3>
+          <button class="btn ghost small focusable" id="refreshAll" type="button">Alle aktualisieren</button>
+        </div>
+        <div id="sourceList"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Allgemein</h3>
+        <div class="toggle-row">
+          <button class="btn ghost focusable" id="autoRefresh" type="button"></button>
+          <button class="btn ghost focusable" id="demoAdd" type="button">Demo-Kanäle hinzufügen</button>
+          <button class="btn ghost focusable" id="resetAll" type="button">Alles zurücksetzen</button>
+        </div>
+        <p class="hint">Zugangsdaten werden nur lokal auf diesem Gerät gespeichert.</p>
+      </div>
+    </div>
+  </section>
 </main>
+
+<div id="toast" class="off"></div>
 
 <div id="player">
   <video id="video" playsinline></video>
@@ -196,56 +248,61 @@ main{padding-top:4.5rem}
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const initials = n => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
-const uid = () => 'c' + Math.random().toString(36).slice(2, 10);
+const initials = n => String(n).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const uid = () => Math.random().toString(36).slice(2, 10);
+const hash = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
 
-const KEY_CH = 'streamtv.channels', KEY_FAV = 'streamtv.favs';
+const KEY_CH = 'streamtv.channels', KEY_FAV = 'streamtv.favs', KEY_SRC = 'streamtv.sources', KEY_SET = 'streamtv.settings';
 const NAV_KEYS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
-const DEMO = `#EXTM3U
-#EXTINF:-1 group-title="Nachrichten",Demo Nachrichten 1
-https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
-#EXTINF:-1 group-title="Nachrichten",Demo Nachrichten 2
-https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
-#EXTINF:-1 group-title="Sport",Demo Sport 1
-https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
-#EXTINF:-1 group-title="Sport",Demo Sport 2
-https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
-#EXTINF:-1 group-title="Filme",Demo Film Kanal
-https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
-#EXTINF:-1 group-title="Filme",Demo Serien Kanal
-https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`;
+const RAIL_MAX = 30, ROWS_MAX = 15, GRID_MAX = 300, LIST_MAX = 200;
+const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
+  .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
 
-let state = { channels: [], favs: [], cat: 'Alle' };
-let playerOpen = false, currentId = null, hls = null, osdTimer = null, lastFocus = null, editId = null;
+let state = { channels: [], favs: [], sources: [], settings: { autoRefresh: true }, cat: 'Alle' };
+let playerOpen = false, currentId = null, osdTimer = null, lastFocus = null, editId = null;
 
-/* ---------- Daten ---------- */
+/* ================= Daten ================= */
 function load() {
   try {
     const raw = localStorage.getItem(KEY_CH);
-    state.channels = raw === null ? parseM3U(DEMO) : JSON.parse(raw);
+    state.channels = raw === null ? DEMO.map(c => ({ ...c })) : JSON.parse(raw);
     state.favs = JSON.parse(localStorage.getItem(KEY_FAV) || '[]');
-  } catch (e) { state.channels = parseM3U(DEMO); }
+    state.sources = JSON.parse(localStorage.getItem(KEY_SRC) || '[]');
+    state.settings = { ...state.settings, ...JSON.parse(localStorage.getItem(KEY_SET) || '{}') };
+  } catch (e) { state.channels = DEMO.map(c => ({ ...c })); }
+  // Daten aus Version 1.0 übernehmen
+  for (const c of state.channels) if (!c.src) c.src = c.url === DEMO_URL ? 'demo' : 'manual';
 }
 function persist() {
   try {
     localStorage.setItem(KEY_CH, JSON.stringify(state.channels));
     localStorage.setItem(KEY_FAV, JSON.stringify(state.favs));
-  } catch (e) {}
+    localStorage.setItem(KEY_SRC, JSON.stringify(state.sources));
+    localStorage.setItem(KEY_SET, JSON.stringify(state.settings));
+  } catch (e) { toast('Speicher voll – nicht alle Daten gespeichert'); }
 }
-function parseM3U(text) {
-  const out = []; let meta = null;
+function parseM3U(text, srcId) {
+  const out = [], seen = new Set();
+  let meta = null;
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
     if (line.startsWith('#EXTINF')) {
       const attr = k => (line.match(new RegExp(k + '="([^"]*)"')) || [])[1] || '';
       meta = {
-        name: line.slice(line.lastIndexOf(',') + 1).trim() || 'Unbenannt',
+        name: line.slice(line.lastIndexOf(',') + 1).trim() || attr('tvg-name') || 'Unbenannt',
         group: attr('group-title') || 'Sonstige',
         logo: attr('tvg-logo')
       };
+    } else if (line.startsWith('#EXTGRP:') && meta) {
+      meta.group = line.slice(8).trim() || meta.group;
     } else if (!line.startsWith('#') && meta) {
-      out.push({ id: uid(), ...meta, url: line });
+      const base = srcId + '_' + hash(line + meta.name);
+      let id = base, n = 1;
+      while (seen.has(id)) id = base + '_' + n++;
+      seen.add(id);
+      out.push({ id, src: srcId, ...meta, url: line });
       meta = null;
     }
   }
@@ -254,9 +311,9 @@ function parseM3U(text) {
 const byId = id => state.channels.find(c => c.id === id);
 const isFav = id => state.favs.includes(id);
 const favList = () => state.favs.map(byId).filter(Boolean);
-function groups() {
+function groups(list = state.channels) {
   const m = new Map();
-  for (const c of state.channels) {
+  for (const c of list) {
     if (!m.has(c.group)) m.set(c.group, []);
     m.get(c.group).push(c);
   }
@@ -268,15 +325,104 @@ function toggleFav(id) {
   refresh();
   if (playerOpen) $('#pFav').textContent = isFav(id) ? '★ Favorit' : '☆ Favorit';
 }
-function addChannels(list) {
-  const urls = new Set(state.channels.map(c => c.url));
-  let n = 0;
-  for (const c of list) if (!urls.has(c.url)) { urls.add(c.url); state.channels.push(c); n++; }
-  $('#importMsg').textContent = `${n} Kanäle hinzugefügt.`;
-  refresh();
+
+/* ================= Netzwerk ================= */
+// XHR statt fetch: funktioniert in der App ohne CORS-Beschränkung
+function getText(url, ms = 30000) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open('GET', url, true);
+    x.timeout = ms;
+    x.onload = () => (x.status >= 200 && x.status < 300) || x.status === 0 && x.responseText
+      ? resolve(x.responseText) : reject(new Error('HTTP ' + x.status));
+    x.onerror = () => reject(new Error('Server nicht erreichbar'));
+    x.ontimeout = () => reject(new Error('Zeitüberschreitung'));
+    x.send();
+  });
+}
+async function getJSON(url) {
+  const t = await getText(url);
+  try { return JSON.parse(t); } catch (e) { throw new Error('Ungültige Antwort vom Server'); }
+}
+function normServer(s) {
+  s = s.trim().replace(/\/+$/, '').replace(/\/player_api\.php.*$/i, '');
+  if (!/^https?:\/\//i.test(s)) s = 'http://' + s;
+  return s;
 }
 
-/* ---------- Rendering ---------- */
+/* ================= Quellen ================= */
+async function fetchSource(src) {
+  if (src.type === 'm3u') {
+    const list = parseM3U(await getText(src.url, 60000), src.id);
+    if (!list.length) throw new Error('Keine Kanäle in der Playlist gefunden');
+    src.info = '';
+    return list;
+  }
+  const base = normServer(src.server);
+  const u = encodeURIComponent(src.user), p = encodeURIComponent(src.pass);
+  const api = `${base}/player_api.php?username=${u}&password=${p}`;
+  const info = await getJSON(api);
+  const ui = info && info.user_info;
+  if (!ui || Number(ui.auth) === 0) throw new Error('Anmeldung fehlgeschlagen – Zugangsdaten prüfen');
+  const exp = ui.exp_date ? new Date(Number(ui.exp_date) * 1000).toLocaleDateString('de-DE') : 'unbegrenzt';
+  src.info = `${ui.status || 'Aktiv'} · gültig bis ${exp}` + (ui.max_connections ? ` · max. ${ui.max_connections} Verbindung(en)` : '');
+  const cats = await getJSON(api + '&action=get_live_categories');
+  const order = new Map(), names = new Map();
+  (Array.isArray(cats) ? cats : []).forEach((c, i) => { order.set(String(c.category_id), i); names.set(String(c.category_id), c.category_name); });
+  const streams = await getJSON(api + '&action=get_live_streams');
+  if (!Array.isArray(streams) || !streams.length) throw new Error('Keine Live-Kanäle gefunden');
+  const ext = src.format === 'ts' ? 'ts' : 'm3u8';
+  return streams
+    .map((s, i) => ({ s, i, o: order.has(String(s.category_id)) ? order.get(String(s.category_id)) : 1e9 }))
+    .sort((a, b) => a.o - b.o || a.i - b.i)
+    .map(({ s }) => ({
+      id: `${src.id}_${s.stream_id}`,
+      src: src.id,
+      name: s.name || 'Unbenannt',
+      group: names.get(String(s.category_id)) || 'Sonstige',
+      logo: s.stream_icon || '',
+      url: `${base}/live/${u}/${p}/${s.stream_id}.${ext}`
+    }));
+}
+async function refreshSource(src, quiet) {
+  src.loading = true; renderSettings();
+  try {
+    const list = await fetchSource(src);
+    state.channels = state.channels.filter(c => c.src !== src.id && c.src !== 'demo').concat(list);
+    const ids = new Set(state.channels.map(c => c.id));
+    state.favs = state.favs.filter(id => ids.has(id));
+    Object.assign(src, { count: list.length, updated: Date.now(), error: '' });
+    if (!quiet) toast(`${src.name}: ${list.length} Kanäle geladen`);
+    return true;
+  } catch (e) {
+    src.error = e.message;
+    if (!quiet) toast(`${src.name}: ${e.message}`);
+    return false;
+  } finally {
+    src.loading = false;
+    refresh();
+  }
+}
+async function addSource(src) {
+  state.sources.push(src);
+  const ok = await refreshSource(src);
+  if (!ok) { state.sources = state.sources.filter(s => s !== src); refresh(); return false; }
+  return true;
+}
+function removeSource(id) {
+  const s = state.sources.find(x => x.id === id);
+  if (!s || !confirm(`Quelle „${s.name}“ mit allen Kanälen entfernen?`)) return;
+  state.sources = state.sources.filter(x => x.id !== id);
+  state.channels = state.channels.filter(c => c.src !== id);
+  const ids = new Set(state.channels.map(c => c.id));
+  state.favs = state.favs.filter(f => ids.has(f));
+  refresh();
+}
+async function refreshAll(quiet) {
+  for (const s of state.sources) await refreshSource(s, quiet);
+}
+
+/* ================= Rendering ================= */
 function cardHTML(c) {
   return `<div class="card focusable" tabindex="0" data-card="${esc(c.id)}">
     <span class="ini">${esc(initials(c.name))}</span>
@@ -292,6 +438,8 @@ function renderChips() {
   ).join('');
 }
 function renderHome() {
+  const g = groups();
+  if (state.cat !== 'Alle' && state.cat !== 'Favoriten' && !g.has(state.cat)) state.cat = 'Alle';
   renderChips();
   const favs = favList();
   const feat = favs[0] || state.channels[0];
@@ -302,55 +450,98 @@ function renderHome() {
          <p>${isFav(feat.id) ? 'Dein Favorit' : 'Jetzt im Programm'}</p>
          <button class="btn focusable" data-card="${esc(feat.id)}">▶ Abspielen</button>
        </div>`
-    : `<div class="hero-content"><h1>Keine Kanäle</h1><p>Lade eine Playlist unter „Kanäle“.</p></div>`;
+    : `<div class="hero-content"><h1>Keine Kanäle</h1><p>Füge unter „Einstellungen“ eine M3U-Playlist oder einen Xtream-Zugang hinzu.</p></div>`;
 
-  const rail = (title, list) => list.length
-    ? `<section class="row"><h2>${esc(title)}<small>${list.length}</small></h2>
-         <div class="rail">${list.map(cardHTML).join('')}</div></section>`
-    : '';
+  const rail = (title, list) => {
+    if (!list.length) return '';
+    const more = list.length > RAIL_MAX
+      ? `<button class="card more focusable" data-cat="${esc(title)}">Alle ${list.length} anzeigen →</button>` : '';
+    return `<section class="row"><h2>${esc(title)}<small>${list.length}</small></h2>
+      <div class="rail">${list.slice(0, RAIL_MAX).map(cardHTML).join('')}${more}</div></section>`;
+  };
+  const grid = (title, list) => `<section class="row"><h2>${esc(title)}<small>${list.length}</small></h2>
+      <div class="grid">${list.slice(0, GRID_MAX).map(cardHTML).join('')}</div>
+      ${list.length > GRID_MAX ? `<p class="empty">Weitere ${list.length - GRID_MAX} Kanäle über die Suche.</p>` : ''}</section>`;
+
   let rows = '';
   if (state.cat === 'Alle') {
-    rows += rail('Meine Favoriten', favs);
-    for (const [g, list] of groups()) rows += rail(g, list);
+    if (favs.length) rows += `<section class="row"><h2>Meine Favoriten<small>${favs.length}</small></h2>
+      <div class="rail">${favs.slice(0, RAIL_MAX).map(cardHTML).join('')}</div></section>`;
+    let n = 0;
+    for (const [name, list] of g) { if (n++ >= ROWS_MAX) break; rows += rail(name, list); }
+    if (g.size > ROWS_MAX) rows += `<p class="empty">Weitere ${g.size - ROWS_MAX} Kategorien oben in der Leiste.</p>`;
   } else if (state.cat === 'Favoriten') {
-    rows += rail('Meine Favoriten', favs);
+    rows += favs.length ? grid('Meine Favoriten', favs) : '';
   } else {
-    rows += rail(state.cat, state.channels.filter(c => c.group === state.cat));
+    rows += grid(state.cat, g.get(state.cat) || []);
   }
   $('#homeRows').innerHTML = rows || `<p class="empty">Keine Kanäle in dieser Kategorie.</p>`;
 }
 function renderSearch() {
   const q = $('#q').value.trim().toLowerCase();
   const res = q ? state.channels.filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q)) : [];
+  $('#searchInfo').textContent = q ? `${res.length} Treffer` + (res.length > GRID_MAX ? ` – die ersten ${GRID_MAX} werden angezeigt` : '') : '';
   $('#searchGrid').innerHTML = !q ? `<p class="empty">Name oder Kategorie eingeben.</p>`
-    : res.length ? res.map(cardHTML).join('') : `<p class="empty">Keine Treffer.</p>`;
+    : res.length ? res.slice(0, GRID_MAX).map(cardHTML).join('') : `<p class="empty">Keine Treffer.</p>`;
 }
 function renderFavs() {
   const f = favList();
   $('#favGrid').innerHTML = f.length ? f.map(cardHTML).join('')
-    : `<p class="empty">Noch keine Favoriten. Stern auf einer Karte oder Taste „f“ drücken.</p>`;
+    : `<p class="empty">Noch keine Favoriten. Stern auf einer Karte, Menü-Taste oder „f“ drücken.</p>`;
+}
+function srcName(id) {
+  if (id === 'manual') return 'Manuell';
+  if (id === 'demo') return 'Demo';
+  return state.sources.find(s => s.id === id)?.name || 'Quelle';
 }
 function renderManage() {
+  const q = $('#mq').value.trim().toLowerCase();
+  const list = q ? state.channels.filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q)) : state.channels;
   $('#count').textContent = state.channels.length;
-  $('#manageList').innerHTML = state.channels.length ? state.channels.map(c => `
+  $('#manageList').innerHTML = list.length ? list.slice(0, LIST_MAX).map(c => `
     <div class="item">
-      <div class="meta"><b>${esc(c.name)}</b><small>${esc(c.group)} · ${esc(c.url)}</small></div>
+      <div class="meta"><b>${esc(c.name)}</b><small>${esc(c.group)} · ${esc(srcName(c.src))}</small></div>
       <div class="actions">
         <button class="focusable" data-act="fav" data-id="${esc(c.id)}">${isFav(c.id) ? '★' : '☆'}</button>
-        <button class="focusable" data-act="edit" data-id="${esc(c.id)}">Bearbeiten</button>
+        ${c.src === 'manual' ? `<button class="focusable" data-act="edit" data-id="${esc(c.id)}">Bearbeiten</button>` : ''}
         <button class="focusable" data-act="del" data-id="${esc(c.id)}">Löschen</button>
       </div>
-    </div>`).join('') : `<p class="empty">Keine Kanäle vorhanden.</p>`;
+    </div>`).join('') + (list.length > LIST_MAX ? `<p class="hint">${list.length - LIST_MAX} weitere – Filter nutzen.</p>` : '')
+    : `<p class="empty">Keine Kanäle.</p>`;
 }
-function renderAll() { renderHome(); renderSearch(); renderFavs(); renderManage(); }
+function renderSettings() {
+  $('#autoRefresh').textContent = 'Quellen beim Start aktualisieren: ' + (state.settings.autoRefresh ? 'An' : 'Aus');
+  $('#sourceList').innerHTML = state.sources.length ? state.sources.map(s => `
+    <div class="item">
+      <div class="meta">
+        <b>${esc(s.name)}</b>
+        <small>${s.type === 'm3u' ? 'M3U-Link' : 'Xtream Codes · ' + (s.format === 'ts' ? 'MPEG-TS' : 'HLS')} · ${s.count || 0} Kanäle${s.updated ? ' · aktualisiert ' + new Date(s.updated).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : ''}</small>
+        ${s.info ? `<small>${esc(s.info)}</small>` : ''}
+        ${s.loading ? `<small>Lädt …</small>` : s.error ? `<small class="err">Fehler: ${esc(s.error)}</small>` : ''}
+      </div>
+      <div class="actions">
+        <button class="focusable" data-src-act="refresh" data-id="${esc(s.id)}">Aktualisieren</button>
+        <button class="focusable" data-src-act="del" data-id="${esc(s.id)}">Entfernen</button>
+      </div>
+    </div>`).join('') : `<p class="empty">Noch keine Quelle. Oben einen M3U-Link oder Xtream-Zugang hinzufügen.</p>`;
+}
+function renderAll() { renderHome(); renderSearch(); renderFavs(); renderManage(); renderSettings(); }
 function refresh() {
   persist();
   const key = document.activeElement?.dataset?.card;
   renderAll();
   if (key) document.querySelector(`[data-card="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
 }
+let toastTimer = null;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.remove('off');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('off'), 3500);
+}
 
-/* ---------- Views ---------- */
+/* ================= Views ================= */
 function show(view) {
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('nav [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
@@ -358,31 +549,67 @@ function show(view) {
   $('#view-' + view + ' .focusable')?.focus({ preventScroll: true });
 }
 
-/* ---------- Player ---------- */
-function loadStream(url) {
-  const v = $('#video');
-  stopStream();
-  setStatus('Lädt …');
-  if (/\.m3u8($|\?)/i.test(url) && window.Hls && Hls.isSupported()) {
-    const h = new Hls({ enableWorker: true });
-    h.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
-    h.on(Hls.Events.ERROR, (_, d) => {
-      if (d.fatal) { setStatus('Stream nicht erreichbar'); stopStream(); }
-    });
-    h.loadSource(url);
-    h.attachMedia(v);
-    hls = h;
-  } else {
-    v.src = url;
-    v.play().catch(() => {});
-  }
+/* ================= Player (HLS, MPEG-TS, nativ) ================= */
+const video = $('#video');
+let hls = null, tsPlayer = null, engine = null, failCb = null, playToken = 0, startTimer = null;
+
+function enginesFor(url) {
+  const u = url.split('?')[0].toLowerCase();
+  if (u.endsWith('.m3u8')) return ['hls', 'ts'];
+  if (u.endsWith('.ts')) return ['ts', 'hls'];
+  if (/\.(mp4|mkv|webm|mov)$/.test(u)) return ['native'];
+  return ['hls', 'ts', 'native'];
 }
 function stopStream() {
-  const v = $('#video');
-  v.pause();
-  if (hls) { hls.destroy(); hls = null; }
-  v.removeAttribute('src');
-  v.load();
+  engine = null; failCb = null;
+  clearTimeout(startTimer);
+  if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+  if (tsPlayer) {
+    try { tsPlayer.pause(); tsPlayer.unload(); tsPlayer.detachMediaElement(); tsPlayer.destroy(); } catch (e) {}
+    tsPlayer = null;
+  }
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+}
+function safePlay(p) { try { const r = p.play(); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+function startEngine(name, url, fail) {
+  engine = name; failCb = fail;
+  startTimer = setTimeout(() => fail(), 20000);
+  if (name === 'hls') {
+    if (!window.Hls || !Hls.isSupported()) return fail();
+    hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+    hls.on(Hls.Events.MANIFEST_PARSED, () => safePlay(video));
+    hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) fail(); });
+    hls.loadSource(url);
+    hls.attachMedia(video);
+  } else if (name === 'ts') {
+    if (!window.mpegts || !mpegts.getFeatureList().mseLivePlayback) return fail();
+    tsPlayer = mpegts.createPlayer({ type: 'mpegts', isLive: true, url },
+      { enableWorker: false, lazyLoad: false, liveBufferLatencyChasing: true });
+    tsPlayer.on(mpegts.Events.ERROR, () => fail());
+    tsPlayer.attachMediaElement(video);
+    tsPlayer.load();
+    safePlay(tsPlayer);
+  } else {
+    video.src = url;
+    safePlay(video);
+  }
+}
+function loadStream(url) {
+  stopStream();
+  const token = ++playToken;
+  const list = enginesFor(url);
+  const next = () => {
+    if (token !== playToken) return;
+    const e = list.shift();
+    stopStream();
+    if (!e) { setStatus('Stream nicht abspielbar'); return; }
+    let done = false;
+    startEngine(e, url, () => { if (!done && token === playToken) { done = true; next(); } });
+  };
+  setStatus('Lädt …');
+  next();
 }
 function setStatus(t) { $('#status').textContent = t; }
 function showOsd() {
@@ -411,7 +638,9 @@ function openPlayer(id) {
 function closePlayer(fromPop) {
   if (!playerOpen) return;
   playerOpen = false;
+  playToken++;
   stopStream();
+  setStatus('');
   $('#player').classList.remove('open');
   if (!fromPop && history.state?.player) history.back();
   lastFocus?.focus?.({ preventScroll: true });
@@ -422,30 +651,25 @@ function zap(step) {
   const i = list.findIndex(c => c.id === currentId);
   openPlayer(list[(i + step + list.length) % list.length].id);
 }
-function togglePlay() {
-  const v = $('#video');
-  v.paused ? v.play().catch(() => {}) : v.pause();
-}
+function togglePlay() { video.paused ? safePlay(video) : video.pause(); }
 function playerKey(e) {
   const k = e.key;
   if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k)) { e.preventDefault(); closePlayer(); return; }
   if (['ArrowUp', 'ChannelUp', 'PageUp'].includes(k)) zap(-1);
   else if (['ArrowDown', 'ChannelDown', 'PageDown'].includes(k)) zap(1);
   else if (['Enter', ' ', 'MediaPlayPause'].includes(k)) togglePlay();
-  else if (['f', 'F'].includes(k)) toggleFav(currentId);
+  else if (['f', 'F', 'ContextMenu'].includes(k)) toggleFav(currentId);
   else return;
   e.preventDefault();
   showOsd();
 }
 window.addEventListener('popstate', () => closePlayer(true));
-
-const v = $('#video');
-v.addEventListener('waiting', () => setStatus('Puffern …'));
-v.addEventListener('playing', () => setStatus(''));
-v.addEventListener('error', () => { if (v.getAttribute('src')) setStatus('Stream nicht erreichbar'); });
+video.addEventListener('waiting', () => { if (engine) setStatus('Puffern …'); });
+video.addEventListener('playing', () => { clearTimeout(startTimer); setStatus(''); });
+video.addEventListener('error', () => { if (engine === 'native' && failCb) failCb(); });
 $('#player').addEventListener('click', e => { if (!e.target.closest('#osd')) { togglePlay(); showOsd(); } });
 
-/* ---------- Spatial navigation (Fernbedienung / Tastatur) ---------- */
+/* ================= Navigation per Fernbedienung ================= */
 function navigate(dir) {
   const all = [...document.querySelectorAll('.focusable')].filter(el => el.getClientRects().length && !el.disabled);
   if (!all.length) return;
@@ -470,6 +694,9 @@ function navigate(dir) {
   if (best) {
     best.focus({ preventScroll: true });
     best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    // Sticky Header nicht über das fokussierte Element legen
+    const hb = $('header').getBoundingClientRect().bottom, br = best.getBoundingClientRect();
+    if (!best.closest('header') && br.top < hb + 8) window.scrollBy({ top: br.top - hb - 16, behavior: 'smooth' });
   }
 }
 document.addEventListener('keydown', e => {
@@ -482,7 +709,7 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'f' || e.key === 'ContextMenu') && a?.dataset.card) { e.preventDefault(); toggleFav(a.dataset.card); }
 });
 
-/* ---------- Klicks (Delegation) ---------- */
+/* ================= Klicks ================= */
 document.addEventListener('click', e => {
   const t = e.target;
   const fav = t.closest('[data-fav]');
@@ -491,6 +718,7 @@ document.addEventListener('click', e => {
   if (cat) {
     state.cat = cat.dataset.cat;
     renderHome();
+    window.scrollTo(0, 0);
     $(`.chip[data-cat="${CSS.escape(state.cat)}"]`)?.focus({ preventScroll: true });
     return;
   }
@@ -498,17 +726,25 @@ document.addEventListener('click', e => {
   if (view) { show(view.dataset.view); return; }
   const act = t.closest('[data-act]');
   if (act) { manageAction(act.dataset.act, act.dataset.id); return; }
+  const sa = t.closest('[data-src-act]');
+  if (sa) {
+    const s = state.sources.find(x => x.id === sa.dataset.id);
+    if (sa.dataset.srcAct === 'refresh' && s && !s.loading) refreshSource(s);
+    if (sa.dataset.srcAct === 'del') removeSource(sa.dataset.id);
+    return;
+  }
   const card = t.closest('[data-card]');
   if (card) openPlayer(card.dataset.card);
 });
 $('#q').addEventListener('input', renderSearch);
+$('#mq').addEventListener('input', renderManage);
 
-/* ---------- Kanalverwaltung ---------- */
+/* ================= Kanäle (manuell) ================= */
 const fld = n => $(`#chForm [name="${n}"]`);
 function resetForm() {
   $('#chForm').reset();
   editId = null;
-  $('#formTitle').textContent = 'Kanal hinzufügen';
+  $('#formTitle').textContent = 'Kanal manuell hinzufügen';
 }
 function manageAction(act, id) {
   const c = byId(id);
@@ -545,46 +781,75 @@ $('#chForm').addEventListener('submit', e => {
     const c = byId(editId);
     if (c) Object.assign(c, data);
   } else {
-    state.channels.push({ id: uid(), ...data });
+    state.channels.push({ id: 'manual_' + uid(), src: 'manual', ...data });
   }
   resetForm();
   refresh();
+  toast('Kanal gespeichert');
 });
 $('#formCancel').addEventListener('click', resetForm);
 
-async function importUrl() {
-  const url = $('#plUrl').value.trim();
-  if (!url) return;
-  $('#importMsg').textContent = 'Lade Playlist …';
-  try {
-    const r = await fetch(url);
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    addChannels(parseM3U(await r.text()));
-  } catch (err) {
-    $('#importMsg').textContent = `Laden fehlgeschlagen (${err.message}). Evtl. CORS-Sperre – bitte Datei importieren.`;
-  }
+/* ================= Einstellungen ================= */
+function setType(t) {
+  $('#formM3u').classList.toggle('hidden', t !== 'm3u');
+  $('#formXt').classList.toggle('hidden', t !== 'xt');
+  $('#typeM3u').className = 'btn small focusable ' + (t === 'm3u' ? 'sel' : 'ghost');
+  $('#typeXt').className = 'btn small focusable ' + (t === 'xt' ? 'sel' : 'ghost');
 }
-$('#plLoad').addEventListener('click', importUrl);
-$('#plPick').addEventListener('click', () => $('#plFile').click());
-$('#plFile').addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  file.text().then(t => addChannels(parseM3U(t)));
-  e.target.value = '';
+$('#typeM3u').addEventListener('click', () => setType('m3u'));
+$('#typeXt').addEventListener('click', () => setType('xt'));
+$('#xtFormat').addEventListener('click', e => {
+  const b = e.currentTarget;
+  b.dataset.format = b.dataset.format === 'm3u8' ? 'ts' : 'm3u8';
+  b.textContent = b.dataset.format === 'ts' ? 'Format: MPEG-TS (ts)' : 'Format: HLS (m3u8)';
 });
-$('#plDemo').addEventListener('click', () => addChannels(parseM3U(DEMO)));
-$('#clearAll').addEventListener('click', () => {
-  if (!confirm('Alle Kanäle und Favoriten entfernen?')) return;
-  state.channels = [];
-  state.favs = [];
-  refresh();
+$('#m3uAdd').addEventListener('click', async e => {
+  const url = $('#m3uUrl').value.trim();
+  if (!/^https?:\/\//i.test(url)) return toast('Bitte einen gültigen http(s)-Link eingeben');
+  const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Lädt …';
+  const ok = await addSource({ id: 's' + uid(), type: 'm3u', name: $('#m3uName').value.trim() || 'M3U-Playlist', url });
+  btn.disabled = false; btn.textContent = 'Hinzufügen & laden';
+  if (ok) { $('#m3uName').value = ''; $('#m3uUrl').value = ''; }
+});
+$('#xtAdd').addEventListener('click', async e => {
+  const server = $('#xtServer').value.trim(), user = $('#xtUser').value.trim(), pass = $('#xtPass').value;
+  if (!server || !user || !pass) return toast('Server, Benutzername und Passwort ausfüllen');
+  const btn = e.currentTarget; btn.disabled = true; btn.textContent = 'Anmelden …';
+  const ok = await addSource({
+    id: 's' + uid(), type: 'xtream', name: $('#xtName').value.trim() || 'Xtream',
+    server: normServer(server), user, pass, format: $('#xtFormat').dataset.format
+  });
+  btn.disabled = false; btn.textContent = 'Anmelden & laden';
+  if (ok) ['#xtName', '#xtServer', '#xtUser', '#xtPass'].forEach(s => $(s).value = '');
+});
+$('#refreshAll').addEventListener('click', () => {
+  if (!state.sources.length) return toast('Keine Quellen vorhanden');
+  refreshAll(false);
+});
+$('#autoRefresh').addEventListener('click', () => {
+  state.settings.autoRefresh = !state.settings.autoRefresh;
+  persist(); renderSettings();
+});
+$('#demoAdd').addEventListener('click', () => {
+  const ids = new Set(state.channels.map(c => c.id));
+  state.channels.push(...DEMO.filter(c => !ids.has(c.id)).map(c => ({ ...c })));
+  refresh(); toast('Demo-Kanäle hinzugefügt');
+});
+$('#resetAll').addEventListener('click', () => {
+  if (!confirm('Alle Quellen, Kanäle, Favoriten und Einstellungen löschen?')) return;
+  state.channels = []; state.favs = []; state.sources = []; state.settings = { autoRefresh: true }; state.cat = 'Alle';
+  refresh(); toast('Zurückgesetzt');
 });
 
-/* ---------- Start ---------- */
+/* ================= Start ================= */
 load();
 persist();
 renderAll();
 show('home');
+if (state.settings.autoRefresh) {
+  const stale = state.sources.filter(s => !s.updated || Date.now() - s.updated > 6 * 3600 * 1000);
+  (async () => { for (const s of stale) await refreshSource(s, true); })();
+}
 </script>
 </body>
 </html>
