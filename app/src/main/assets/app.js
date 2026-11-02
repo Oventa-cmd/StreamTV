@@ -662,21 +662,43 @@ function navigate(dir) {
   if (!all.length) return;
   const cur = document.activeElement;
   if (!all.includes(cur)) { all[0].focus({ preventScroll: true }); return; }
-  const c = cur.getBoundingClientRect();
-  const cx = c.left + c.width / 2, cy = c.top + c.height / 2;
-  let best = null, bestScore = Infinity;
+  // Sticky-Kopfzeile: für Hoch/Runter an ihrer echten Position am Seitenanfang werten
+  const vert = dir === 'ArrowUp' || dir === 'ArrowDown';
+  const rectOf = el => {
+    const r = el.getBoundingClientRect();
+    if (!vert || sheetOpen || !el.closest('header')) return r;
+    return { left: r.left, right: r.right, top: r.top - window.scrollY, bottom: r.bottom - window.scrollY };
+  };
+  const c = rectOf(cur);
+  const ccx = (c.left + c.right) / 2, ccy = (c.top + c.bottom) / 2;
+  const cands = [];
   for (const el of all) {
     if (el === cur) continue;
-    const r = el.getBoundingClientRect();
-    const dx = (r.left + r.width / 2) - cx, dy = (r.top + r.height / 2) - cy;
-    let main, side;
-    if (dir === 'ArrowRight') { main = dx; side = dy; }
-    else if (dir === 'ArrowLeft') { main = -dx; side = dy; }
-    else if (dir === 'ArrowDown') { main = dy; side = dx; }
-    else { main = -dy; side = dx; }
-    if (main <= 5) continue;
-    const score = main + Math.abs(side) * 3;
-    if (score < bestScore) { bestScore = score; best = el; }
+    const r = rectOf(el);
+    const rcx = (r.left + r.right) / 2, rcy = (r.top + r.bottom) / 2;
+    let main, gap, align;
+    if (vert) {
+      if (dir === 'ArrowUp' ? rcy >= ccy - 2 : rcy <= ccy + 2) continue;
+      main = dir === 'ArrowUp' ? c.top - r.bottom : r.top - c.bottom;
+      gap = Math.max(0, r.left - c.right, c.left - r.right);
+      align = Math.abs(rcx - ccx);
+    } else {
+      if (dir === 'ArrowLeft' ? rcx >= ccx - 2 : rcx <= ccx + 2) continue;
+      main = dir === 'ArrowLeft' ? c.left - r.right : r.left - c.right;
+      gap = Math.max(0, r.top - c.bottom, c.top - r.bottom);
+      align = Math.abs(rcy - ccy);
+    }
+    cands.push({ el, main: Math.max(main, 0), gap, align });
+  }
+  // 1. nur die direkt angrenzende Zeile/Spalte  2. darin das am besten passende Element
+  let best = null;
+  if (cands.length) {
+    const sameLine = cands.filter(x => x.gap === 0);
+    const pool = !vert && sameLine.length ? sameLine : cands;
+    const nearest = Math.min(...pool.map(x => x.main));
+    const band = pool.filter(x => x.main <= nearest + 24);
+    band.sort((x, y) => x.gap - y.gap || x.align - y.align);
+    best = band[0].el;
   }
   if (!best) return;
   best.focus({ preventScroll: true });
@@ -887,4 +909,48 @@ loadDiscover(false);
 if (state.settings.autoRefresh) {
   const stale = state.sources.filter(s => !s.updated || Date.now() - s.updated > 6 * 3600 * 1000);
   (async () => { for (const s of stale) await refreshSource(s, true); })();
+}
+
+/* ================= Zugangsdaten vom Laptop (per ADB übertragen) ================= */
+// Aufruf durch die App: importConfig("<Inhalt von zugang.txt>")
+async function importConfig(text) {
+  const cfg = {};
+  for (const line of String(text).split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/i);
+    if (m && !line.trim().startsWith('#')) cfg[m[1].toUpperCase()] = m[2];
+  }
+  const done = [];
+  show('settings');
+  // Xtream
+  let server = cfg.SERVER || '', user = cfg.BENUTZER || '', pass = cfg.PASSWORT || '';
+  const link = parseXtreamLink(server);
+  if (link) { server = link.server; user = user || link.user; pass = pass || link.pass; }
+  if (server && user && pass) {
+    server = normServer(server);
+    let src = state.sources.find(s => s.type === 'xtream' && s.server === server && s.user === user);
+    const fmt = /ts/i.test(cfg.FORMAT || '') ? 'ts' : 'm3u8';
+    if (src) {
+      Object.assign(src, { pass, format: fmt, name: cfg.NAME || src.name });
+      done.push((await refreshSource(src)) ? `Xtream „${src.name}“ aktualisiert` : `Xtream: ${src.error}`);
+    } else {
+      src = { id: 's' + uid(), type: 'xtream', name: cfg.NAME || 'Xtream', server, user, pass, format: fmt };
+      const ok = await addSource(src);
+      done.push(ok ? `Xtream „${src.name}“ hinzugefügt` : `Xtream: ${src.error}`);
+      if (!ok) $('#xtErr').textContent = 'Fehler: ' + src.error + ' (Server: ' + server + ')';
+    }
+  }
+  // M3U
+  if (/^https?:\/\//i.test(cfg.M3U || '') && !state.sources.some(s => s.type === 'm3u' && s.url === cfg.M3U)) {
+    const src = { id: 's' + uid(), type: 'm3u', name: cfg.M3U_NAME || 'M3U-Playlist', url: cfg.M3U };
+    done.push((await addSource(src)) ? `M3U „${src.name}“ hinzugefügt` : `M3U: ${src.error}`);
+  }
+  // Serien-Watchlist
+  if (cfg.WATCHLIST_EMAIL && cfg.WATCHLIST_PASSWORT && !WL.connected) {
+    try { await WL.login(cfg.WATCHLIST_EMAIL, cfg.WATCHLIST_PASSWORT); TM.clear(); loadDiscover(true); done.push('Watchlist angemeldet'); }
+    catch (e) { done.push('Watchlist: ' + e.message); }
+  }
+  if (cfg.TMDB_KEY) { state.settings.tmdbKey = cfg.TMDB_KEY; persist(); TM.clear(); loadDiscover(true); done.push('TMDB-Schlüssel gespeichert'); }
+  renderSettings();
+  toast(done.length ? done.join(' · ') : 'Keine Zugangsdaten in zugang.txt gefunden');
+  return done;
 }

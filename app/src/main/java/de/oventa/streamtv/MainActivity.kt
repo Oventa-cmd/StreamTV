@@ -15,11 +15,15 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.util.Base64
+import org.json.JSONObject
 
 class MainActivity : Activity() {
 
     private lateinit var web: WebView
     private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private var pendingConfig: String? = null
+    private var pageReady = false
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,7 +48,13 @@ class MainActivity : Activity() {
         }
         web.addJavascriptInterface(Bridge(), "StreamTVApp")
 
-        web.webViewClient = WebViewClient()
+        web.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                pageReady = true
+                deliverConfig()
+            }
+        }
+        takeConfig(intent)
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
                 view: WebView,
@@ -99,6 +109,26 @@ class MainActivity : Activity() {
         fun appVersion(): String = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: ""
         } catch (e: Exception) { "" }
+    }
+
+    // Zugangsdaten vom Laptop: adb shell am start -n de.oventa.streamtv/.MainActivity --es config <Base64>
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeConfig(intent)
+        deliverConfig()
+    }
+
+    private fun takeConfig(i: Intent?) {
+        val b64 = i?.getStringExtra("config") ?: return
+        i!!.removeExtra("config")
+        pendingConfig = try { String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8) } catch (e: Exception) { null }
+    }
+
+    private fun deliverConfig() {
+        val cfg = pendingConfig ?: return
+        if (!pageReady) return
+        pendingConfig = null
+        web.evaluateJavascript("window.importConfig && importConfig(" + JSONObject.quote(cfg) + ")", null)
     }
 
     private fun launchIntent(pkg: String): Intent? =
