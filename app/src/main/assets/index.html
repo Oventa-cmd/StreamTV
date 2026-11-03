@@ -206,6 +206,7 @@
           <div class="seg" id="saverSeg"><button class="focusable" data-saver="0" type="button">Aus</button><button class="focusable" data-saver="2" type="button">2 Min.</button><button class="focusable" data-saver="5" type="button">5 Min.</button><button class="focusable" data-saver="10" type="button">10 Min.</button></div>
           <div class="actions"><button class="mini focusable" id="saverNow" type="button">Vorschau</button></div></div>
         <button class="switch focusable" id="swLite" type="button"><span class="lbl"><b>Effekte reduzieren</b><small>Weniger Unschärfe und Animationen – flüssiger auf älteren Fire-TV-Geräten</small></span><span class="knob"></span></button>
+        <button class="switch focusable" id="swNative" type="button"><span class="lbl"><b>Systemplayer für Serien &amp; Filme</b><small>Mit Dolby-Ton, allen Tonspuren und Untertiteln. Nur ausschalten, wenn etwas nicht abspielt.</small></span><span class="knob"></span></button>
         <button class="switch focusable" id="swAuto" type="button"><span class="lbl"><b>Quellen beim Start aktualisieren</b><small>Wenn die letzte Aktualisierung über 6 Stunden her ist</small></span><span class="knob"></span></button>
         <button class="row-btn focusable" id="demoAdd" type="button"><span>Demo-Kanäle hinzufügen</span><span class="chev">›</span></button>
         <button class="row-btn danger focusable" id="resetAll" type="button"><span>Alles zurücksetzen</span><span class="chev">›</span></button>
@@ -234,6 +235,7 @@
 <!-- ================= Player ================= -->
 <div id="player">
   <video id="video" playsinline></video>
+  <div id="nvCue" class="nv-cue"></div>
   <div id="status"></div>
   <div id="pMenu" class="pmenu hidden"></div>
   <div id="pList" class="clist hidden"></div>

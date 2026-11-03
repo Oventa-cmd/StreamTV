@@ -15,7 +15,7 @@ const RAIL_MAX = 30, ROWS_MAX = 15, GRID_MAX = 300, LIST_MAX = 200;
 const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
   .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
-const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], lite: false, saver: 5 };
+const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], lite: false, saver: 5, nativeVod: true };
 
 let state = { channels: [], favs: [], recent: [], sources: [], settings: { ...DEFAULT_SETTINGS }, cat: 'Alle', view: 'home' };
 let playerOpen = false, sheetOpen = false, currentId = null, osdTimer = null, lastFocus = null, playerFocus = null, vod = null, editId = null, xtFmt = 'm3u8';
@@ -379,6 +379,8 @@ function renderSettings() {
   const s = state.settings;
   $('#swAuto').classList.toggle('on', !!s.autoRefresh);
   $('#swLite').classList.toggle('on', !!s.lite);
+  $('#swNative').classList.toggle('on', s.nativeVod !== false);
+  $('#swNative').classList.toggle('hidden', !(bridge && typeof bridge.nvPlay === 'function'));
   $$('#saverSeg [data-saver]').forEach(b => b.classList.toggle('sel', Number(b.dataset.saver) === Number(s.saver)));
   $('#swVpnAuto').classList.toggle('on', !!s.vpnAuto);
   $('#swVpnReq').classList.toggle('on', !!s.vpnReq);
@@ -1285,6 +1287,56 @@ function show(view) {
 const video = $('#video');
 let hls = null, tsPlayer = null, engine = null, failCb = null, playToken = 0, startTimer = null;
 
+/* ---------- Nativer Player (Media3, nur Fire-TV-App) ----------
+   Serien/Filme laufen nativ (Dolby-Ton, MKV, alle Spuren). Das <video>-Element bleibt die
+   Schnittstelle für die ganze Oberfläche: currentTime, duration, paused … werden umgeleitet. */
+const NV = { on: false, t: 0, d: NaN, paused: true, seeking: false, seekAt: 0, tracks: [] };
+window.NV = NV;   // die App ruft window.NV.ev(...) / NV.cue(...) auf
+const nvOk = () => { try { return !!(bridge && typeof bridge.nvPlay === 'function') && state.settings.nativeVod !== false; } catch (e) { return false; } };
+(() => {
+  const P = HTMLMediaElement.prototype, d = n => Object.getOwnPropertyDescriptor(P, n);
+  const ct = d('currentTime'), du = d('duration'), pa = d('paused'), se = d('seeking');
+  Object.defineProperty(video, 'currentTime', { configurable: true,
+    get() { return NV.on ? NV.t : ct.get.call(video); },
+    set(v) {
+      if (!NV.on) return ct.set.call(video, v);
+      NV.t = Math.max(0, Number(v) || 0); NV.seeking = true; NV.seekAt = Date.now();
+      bridge.nvSeek(NV.t * 1000);
+      video.dispatchEvent(new Event('seeking'));
+    } });
+  Object.defineProperty(video, 'duration', { configurable: true, get() { return NV.on ? NV.d : du.get.call(video); } });
+  Object.defineProperty(video, 'paused', { configurable: true, get() { return NV.on ? NV.paused : pa.get.call(video); } });
+  Object.defineProperty(video, 'seeking', { configurable: true, get() { return NV.on ? NV.seeking : se.get.call(video); } });
+  video.play = function () { if (!NV.on) return P.play.call(video); NV.paused = false; bridge.nvResume(); return Promise.resolve(); };
+  video.pause = function () { if (!NV.on) return P.pause.call(video); NV.paused = true; bridge.nvPause(); };
+})();
+NV.ev = (type, pos, dur, paused, msg) => {
+  if (!NV.on) return;
+  NV.t = pos / 1000; NV.d = dur > 0 ? dur / 1000 : NaN; NV.paused = !!paused;
+  if (NV.seeking && (type === 'playing' || type === 'pause' || Date.now() - NV.seekAt > 1500)) { NV.seeking = false; video.dispatchEvent(new Event('seeked')); }
+  if (type === 'error') { console.warn('Nativer Player:', msg); if (failCb) failCb(); return; }
+  if (type === 'tracks') {
+    try { NV.tracks = JSON.parse(bridge.nvTracks() || '[]'); } catch (e) { NV.tracks = []; }
+    const au = NV.tracks.filter(t => t.type === 'audio');
+    if (au.length && !au.some(t => t.ok)) toast('Tonspur wird von diesem Gerät nicht unterstützt');
+    applyTrackPref();
+    if (menuOpen) renderMenu();
+    return;
+  }
+  video.dispatchEvent(new Event(type));
+};
+NV.cue = text => {
+  const el = $('#nvCue');
+  el.innerHTML = text ? text.split('\n').map(l => `<span>${esc(l)}</span>`).join('<br>') : '';
+};
+function nvStop() {
+  if (!NV.on) return;
+  NV.on = false; NV.tracks = [];
+  try { bridge.nvStop(); } catch (e) {}
+  NV.cue('');
+  document.documentElement.classList.remove('nv');
+}
+
 function enginesFor(url) {
   const u = url.split('?')[0].toLowerCase();
   if (u.endsWith('.m3u8')) return ['hls', 'ts'];
@@ -1294,6 +1346,7 @@ function enginesFor(url) {
 }
 function stopStream() {
   engine = null; failCb = null;
+  nvStop();
   clearTimeout(startTimer);
   if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
   if (tsPlayer) { try { tsPlayer.pause(); tsPlayer.unload(); tsPlayer.detachMediaElement(); tsPlayer.destroy(); } catch (e) {} tsPlayer = null; }
@@ -1305,7 +1358,11 @@ function safePlay(p) { try { const r = p.play(); if (r && r.catch) r.catch(() =>
 function startEngine(name, url, fail) {
   engine = name; failCb = fail;
   startTimer = setTimeout(() => fail(), 20000);
-  if (name === 'hls') {
+  if (name === 'exo') {
+    Object.assign(NV, { on: true, t: 0, d: NaN, paused: false, seeking: false, tracks: [] });
+    document.documentElement.classList.add('nv');
+    try { bridge.nvPlay(url, 0, 'IPTVSmartersPlayer'); } catch (e) { nvStop(); return fail(); }
+  } else if (name === 'hls') {
     if (!window.Hls || !Hls.isSupported()) return fail();
     hls = new Hls({ enableWorker: true });
     hls.on(Hls.Events.MANIFEST_PARSED, () => safePlay(video));
@@ -1340,6 +1397,7 @@ function loadStream(url, keep) {
   stopStream();
   const token = ++playToken;
   let list = enginesFor(url);
+  if (vod && nvOk()) list = ['exo', ...list];   // Serien & Filme: zuerst nativ (Dolby-Ton)
   if (keep && RC.eng) list = [RC.eng, ...list.filter(x => x !== RC.eng)];   // zuerst die Engine, die schon lief
   const next = () => {
     if (token !== playToken) return;
@@ -1827,6 +1885,13 @@ const trkLabel = (name, lang, i) => {
 /** Verfügbare Spuren der aktuellen Wiedergabe (hls.js oder nativ). */
 function getTracks() {
   const audio = [], subs = [];
+  if (engine === 'exo') {
+    const au = NV.tracks.filter(t => t.type === 'audio'), tx = NV.tracks.filter(t => t.type === 'text');
+    au.forEach((t, i) => audio.push({ label: trkLabel(t.label, t.lang, i) + (t.ch > 2 ? ` · ${t.ch === 6 ? '5.1' : t.ch === 8 ? '7.1' : t.ch + ' Kanäle'}` : '') + (t.ok ? '' : ' (nicht unterstützt)'),
+      lang: langOf(t.lang), sel: t.sel, set: () => bridge.nvSelect('audio', t.g, t.i) }));
+    tx.forEach((t, i) => subs.push({ label: trkLabel(t.label, t.lang, i), lang: langOf(t.lang), sel: t.sel, set: () => bridge.nvSelect('text', t.g, t.i) }));
+    return { audio, subs, off: () => { bridge.nvSelect('text', -1, -1); NV.cue(''); }, offSel: !tx.some(t => t.sel) };
+  }
   if (engine === 'hls' && hls) {
     (hls.audioTracks || []).forEach((t, i) => audio.push({ label: trkLabel(t.name, t.lang, i), lang: langOf(t.lang), sel: hls.audioTrack === i, set: () => { hls.audioTrack = i; } }));
     (hls.subtitleTracks || []).forEach((t, i) => subs.push({ label: trkLabel(t.name, t.lang, i), lang: langOf(t.lang), sel: hls.subtitleTrack === i && hls.subtitleDisplay !== false,
@@ -2168,6 +2233,7 @@ $('#xtAdd').addEventListener('click', async e => {
 function toggleSetting(key) { state.settings[key] = !state.settings[key]; persist(); renderSettings(); }
 $('#swAuto').addEventListener('click', () => toggleSetting('autoRefresh'));
 $('#swLite').addEventListener('click', () => { toggleSetting('lite'); applyLite(); });
+$('#swNative').addEventListener('click', () => { state.settings.nativeVod = state.settings.nativeVod === false; persist(); renderSettings(); });
 $$('#saverSeg [data-saver]').forEach(b => b.addEventListener('click', () => { state.settings.saver = Number(b.dataset.saver); persist(); renderSettings(); b.focus({ preventScroll: true }); }));
 $('#saverNow').addEventListener('click', () => openSaver());
 $('#swVpnAuto').addEventListener('click', () => toggleSetting('vpnAuto'));

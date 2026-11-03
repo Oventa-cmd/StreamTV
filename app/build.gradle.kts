@@ -13,6 +13,7 @@ android {
         targetSdk = 34
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionName = "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
     signingConfigs {
@@ -42,4 +43,12 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+dependencies {
+    // Nativer Player fuer Serien/Filme (Dolby-Ton, MKV, Spuren, Untertitel)
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
+    // Software-Decoder fuer AC3/E-AC3/DTS, falls das Geraet keinen eigenen hat
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.3.1+2")
 }

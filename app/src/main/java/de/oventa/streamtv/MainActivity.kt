@@ -15,12 +15,14 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import android.util.Base64
 import org.json.JSONObject
 
 class MainActivity : Activity() {
 
     private lateinit var web: WebView
+    private lateinit var native: NativePlayer
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var pendingConfig: String? = null
     private var pendingDeep: String? = null
@@ -31,9 +33,14 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        // Video (nativ) liegt hinter der transparenten WebView
+        val root = FrameLayout(this)
+        root.setBackgroundColor(0xFF000000.toInt())
         web = WebView(this)
-        web.setBackgroundColor(0xFF000000.toInt())
-        setContentView(web)
+        web.setBackgroundColor(0x00000000)
+        root.addView(web, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        setContentView(root)
+        native = NativePlayer(this, root) { s -> web.evaluateJavascript(s, null) }
 
         web.settings.apply {
             javaScriptEnabled = true
@@ -123,6 +130,15 @@ class MainActivity : Activity() {
             runOnUiThread { try { startActivity(chooser) } catch (_: Exception) { } }
             true
         } catch (e: Exception) { false }
+
+        // ---------- Nativer Player (Serien & Filme) ----------
+        @JavascriptInterface fun nvPlay(url: String, startMs: Double, ua: String) = native.play(url, startMs.toLong(), ua)
+        @JavascriptInterface fun nvPause() = native.pause()
+        @JavascriptInterface fun nvResume() = native.resume()
+        @JavascriptInterface fun nvSeek(ms: Double) = native.seek(ms.toLong())
+        @JavascriptInterface fun nvStop() = native.stop()
+        @JavascriptInterface fun nvTracks(): String = native.tracksJson
+        @JavascriptInterface fun nvSelect(type: String, g: Int, i: Int) = native.select(type, g, i)
 
         /** Weiterschauen-Liste (JSON-Array) fuer den TV-Launcher speichern. */
         @JavascriptInterface
@@ -228,6 +244,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        native.release()
         web.destroy()
         super.onDestroy()
     }
