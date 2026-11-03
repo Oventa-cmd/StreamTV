@@ -13,6 +13,7 @@
 <header>
   <div class="brand"><span class="brand-icon">▶</span>StreamTV</div>
   <nav class="tabbar">
+    <span class="tab-ind" aria-hidden="true"></span>
     <button class="focusable" data-view="home">Start</button>
     <button class="focusable" data-view="discover">Entdecken</button>
     <button class="focusable" data-view="series">Serien</button>
@@ -32,6 +33,7 @@
   <section class="view active" id="view-home">
     <div class="hero" id="hero">
       <div class="hero-bg" id="heroBg"></div>
+      <div class="hero-bg" id="heroBg2"></div>
       <div class="hero-content" id="heroContent"></div>
       <div class="hero-dots" id="heroDots"></div>
     </div>
@@ -186,6 +188,7 @@
       <!-- Allgemein -->
       <div class="group-title">Allgemein</div>
       <div class="group">
+        <button class="switch focusable" id="swLite" type="button"><span class="lbl"><b>Effekte reduzieren</b><small>Weniger Unschärfe und Animationen – flüssiger auf älteren Fire-TV-Geräten</small></span><span class="knob"></span></button>
         <button class="switch focusable" id="swAuto" type="button"><span class="lbl"><b>Quellen beim Start aktualisieren</b><small>Wenn die letzte Aktualisierung über 6 Stunden her ist</small></span><span class="knob"></span></button>
         <button class="row-btn focusable" id="demoAdd" type="button"><span>Demo-Kanäle hinzufügen</span><span class="chev">›</span></button>
         <button class="row-btn danger focusable" id="resetAll" type="button"><span>Alles zurücksetzen</span><span class="chev">›</span></button>

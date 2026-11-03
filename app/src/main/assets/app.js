@@ -15,7 +15,7 @@ const RAIL_MAX = 30, ROWS_MAX = 15, GRID_MAX = 300, LIST_MAX = 200;
 const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
   .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
-const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [] };
+const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], lite: false };
 
 let state = { channels: [], favs: [], recent: [], sources: [], settings: { ...DEFAULT_SETTINGS }, cat: 'Alle', view: 'home' };
 let playerOpen = false, sheetOpen = false, currentId = null, osdTimer = null, lastFocus = null, playerFocus = null, vod = null, editId = null, xtFmt = 'm3u8';
@@ -376,6 +376,7 @@ function renderManage() {
 function renderSettings() {
   const s = state.settings;
   $('#swAuto').classList.toggle('on', !!s.autoRefresh);
+  $('#swLite').classList.toggle('on', !!s.lite);
   $('#swVpnAuto').classList.toggle('on', !!s.vpnAuto);
   $('#swVpnReq').classList.toggle('on', !!s.vpnReq);
   $('#sourceList').innerHTML = state.sources.length ? state.sources.map(x => `
@@ -456,28 +457,49 @@ function setupHero() {
     renderHero();
   }, 9000);
 }
+let heroLayer = 0, heroShown = '', heroAnimKey = '';
+/** Hintergrund weich überblenden (zwei Ebenen, Ken-Burns-Zoom). */
+function heroBackdrop(url) {
+  if (url === heroShown) return;
+  heroShown = url;
+  const layers = [$('#heroBg'), $('#heroBg2')];
+  if (!url) { layers.forEach(l => l.classList.remove('show')); return; }
+  const img = new Image();
+  img.onload = () => {
+    if (heroShown !== url) return;
+    heroLayer = 1 - heroLayer;
+    const on = layers[heroLayer], off = layers[1 - heroLayer];
+    on.style.backgroundImage = `url("${url}")`;
+    on.classList.remove('show'); void on.offsetWidth;
+    on.classList.add('show'); off.classList.remove('show');
+  };
+  img.src = url;
+}
+function heroEnter(key) {
+  if (key === heroAnimKey) return;
+  heroAnimKey = key;
+  const box = $('#heroContent');
+  box.classList.remove('enter'); void box.offsetWidth; box.classList.add('enter');
+}
 function renderHero() {
-  const bg = $('#heroBg'), box = $('#heroContent');
+  const box = $('#heroContent');
   if (heroItems.length) {
     const p = heroItems[heroIdx];
-    const url = `${TM.IMG}w1280${p.backdrop}`;
-    const img = new Image();
-    img.onload = () => { bg.style.backgroundImage = `url("${url}")`; bg.classList.add('show'); };
-    bg.classList.remove('show');
-    img.src = url;
+    heroBackdrop(`${TM.IMG}w1280${p.backdrop}`);
     const d = TM.details_[p.type + ':' + p.id];
     const logo = d && TM.pickLogo(d);
-    box.innerHTML = `<div class="eyebrow">Top 10 Serien · Platz ${heroIdx + 1}</div>
+    box.innerHTML = `<div class="eyebrow"><span class="t10">TOP<b>10</b></span>Platz ${heroIdx + 1} der Serien diese Woche</div>
       ${logo ? `<img class="hero-logo" src="${TM.IMG}w500${logo}" alt="">` : `<h1>${esc(p.title)}</h1>`}
       <div class="meta">${esc(TM.info(p))}</div>
       <p class="ov">${esc(p.overview)}</p>
       <div class="btn-row"><button class="btn primary focusable" data-show="${p.type}:${p.id}">Details</button>
       <button class="btn focusable" data-livesearch="${esc(p.title)}">Im Live-TV suchen</button></div>`;
     $('#heroDots').innerHTML = heroItems.map((_, i) => `<i class="${i === heroIdx ? 'on' : ''}"></i>`).join('');
+    heroEnter('tmdb:' + p.id);
     if (!d) TM.details(p.type, p.id).then(() => { if (heroItems[heroIdx] === p && !$('#hero').contains(document.activeElement)) renderHero(); }).catch(() => {});
     return;
   }
-  bg.classList.remove('show');
+  heroBackdrop('');
   $('#heroDots').innerHTML = '';
   const feat = favList()[0] || recentList()[0] || state.channels[0];
   box.innerHTML = feat
@@ -486,6 +508,7 @@ function renderHero() {
        <div class="btn-row"><button class="btn primary focusable" data-card="${esc(feat.id)}">▶ Abspielen</button></div>`
     : `<div class="eyebrow">Willkommen</div><h1>StreamTV</h1><p class="ov">Füge unter „Einstellungen“ eine M3U-Playlist oder einen Xtream-Zugang hinzu.</p>
        <div class="btn-row"><button class="btn primary focusable" data-view="settings">Einrichten</button></div>`;
+  heroEnter('live:' + (feat ? feat.id : 'none'));
 }
 
 /* ================= Entdecken laden ================= */
@@ -509,7 +532,7 @@ async function loadDiscover(force) {
 async function openSheet(key) {
   const p = TM.find(key);
   if (!p) return;
-  if (!sheetOpen) { lastFocus = document.activeElement; sheetOpen = true; pushOverlay('sheet'); $('#sheet').classList.add('open'); }
+  if (!sheetOpen) { lastFocus = document.activeElement; sheetOpen = true; pushOverlay('sheet'); $('#sheet').classList.add('open'); sheetAnim(); }
   renderSheet(p, TM.details_[key]);
   if (!TM.details_[key]) {
     try { const d = await TM.details(p.type, p.id); if (sheetOpen && !ip) renderSheet(p, d); } catch (e) {}
@@ -583,6 +606,7 @@ async function openIptv(key) {
   ip = { p, d, status: 'loading', msg: '', hits: [], sel: null, info: null, season: null, token: Date.now() };
   pushOverlay('iptv');
   $('#sheet').classList.add('iptv');
+  sheetAnim();
   renderIptv();
   const tok = ip.token;
   try {
@@ -823,6 +847,7 @@ function openCatalogSeries(i) {
   lastFocus = document.activeElement; sheetOpen = true;
   pushOverlay('sheet');
   $('#sheet').classList.add('open');
+  sheetAnim();
   $('#sheetBd').style.backgroundImage = x.it.cover ? `url("${x.it.cover.replace(/"/g, '%22')}")` : 'none';
   const p = { type: 'tv', id: x.it.tmdb || 0, title: cleanName(x.it.name), backdrop: null, poster: null };
   ip = { p, d: null, status: 'loadingShow', msg: '', hits: [{ acc: x.acc, it: x.it, s: 100 }], sel: null, info: null, season: null, token: Date.now(), cat: true };
@@ -946,6 +971,7 @@ function show(view) {
   $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   window.scrollTo(0, 0);
   EPG.scan();
+  updateHeader(); moveTabInd();
   const tab = $(`.tabbar [data-view="${view}"]`);
   if (tab) tab.focus({ preventScroll: true });
 }
@@ -1797,6 +1823,7 @@ $('#xtAdd').addEventListener('click', async e => {
 });
 function toggleSetting(key) { state.settings[key] = !state.settings[key]; persist(); renderSettings(); }
 $('#swAuto').addEventListener('click', () => toggleSetting('autoRefresh'));
+$('#swLite').addEventListener('click', () => { toggleSetting('lite'); applyLite(); });
 $('#swVpnAuto').addEventListener('click', () => toggleSetting('vpnAuto'));
 $('#swVpnReq').addEventListener('click', () => toggleSetting('vpnReq'));
 $('#vpnOpen').addEventListener('click', () => {
@@ -1898,11 +1925,39 @@ function renderUpdate() {
 }
 document.addEventListener('click', e => { if (e.target.closest('#updCheck')) checkUpdate(true); });
 
+/* ================= Design: Kopfzeile, Tab-Pill, Übergänge ================= */
+function updateHeader() {
+  $('header').classList.toggle('scrolled', state.view !== 'home' || window.scrollY > 40);
+}
+function moveTabInd() {
+  const ind = $('.tab-ind'), b = $('.tabbar button.active');
+  if (!ind) return;
+  if (!b) { ind.style.opacity = '0'; return; }
+  ind.style.opacity = '1';
+  ind.style.width = b.offsetWidth + 'px';
+  ind.style.transform = `translateX(${b.offsetLeft}px)`;
+}
+let sheetAnimT = null;
+function sheetAnim() {
+  const s = $('#sheet');
+  s.classList.remove('anim'); void s.offsetWidth; s.classList.add('anim');
+  clearTimeout(sheetAnimT);
+  sheetAnimT = setTimeout(() => s.classList.remove('anim'), 1100);
+}
+function applyLite() { document.body.classList.toggle('lite', !!state.settings.lite); }
+window.addEventListener('scroll', updateHeader, { passive: true });
+window.addEventListener('resize', moveTabInd);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveTabInd);
+// Bilder weich einblenden, sobald sie geladen sind
+document.addEventListener('load', e => { const t = e.target; if (t && t.tagName === 'IMG') t.classList.add('ok'); }, true);
+document.documentElement.classList.add('fx');
+
 /* ================= Uhr ================= */
 function tick() { $('#clock').textContent = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }); }
 
 /* ================= Start ================= */
 load();
+applyLite();
 EPG.load();
 EPG.onUpdate(epgPatch);
 document.addEventListener('scroll', () => { EPG.scan(); if (state.view === 'series') seriesMore(); }, true);

@@ -6,9 +6,9 @@
 @font-face{font-family:Inter;font-weight:800;font-display:swap;src:url(fonts/inter-800.woff2) format("woff2")}
 
 :root{
-  --bg:#000;--txt:#f5f5f7;--mut:rgba(235,235,245,.6);--mut2:rgba(235,235,245,.38);
+  --bg:#000;--txt:#f5f5f7;--mut:rgba(235,235,245,.64);--mut2:rgba(235,235,245,.55);
   --glass:rgba(255,255,255,.08);--glass2:rgba(255,255,255,.14);--line:rgba(255,255,255,.08);
-  --accent:#0a84ff;--red:#ff453a;--green:#30d158;--yellow:#ffd60a;
+  --accent:#e50914;--red:#e50914;--red-d:#b20710;--green:#30d158;--yellow:#ffd60a;
   --r-sm:10px;--r:16px;--r-lg:22px;
   --ease:cubic-bezier(.2,.8,.2,1);
   --pad:4.5%;
@@ -140,7 +140,7 @@ button.pill:focus{background:#fff;color:#000}
 /* ---------- Formulare & Einstellungen (iOS-Stil) ---------- */
 .search{width:100%;max-width:680px;padding:.95rem 1.2rem .95rem 2.8rem;border-radius:var(--r);border:1px solid var(--line);font-size:1.05rem;
   background:var(--glass) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%23999' stroke-width='2.2'%3E%3Ccircle cx='8.5' cy='8.5' r='6'/%3E%3Cpath d='m13 13 5 5'/%3E%3C/svg%3E") no-repeat 1rem center;transition:box-shadow .25s,background-color .25s}
-.search:focus,.field:focus{box-shadow:0 0 0 3px rgba(10,132,255,.85);background-color:rgba(255,255,255,.12)}
+.search:focus,.field:focus{box-shadow:0 0 0 3px rgba(255,255,255,.9);background-color:rgba(255,255,255,.12)}
 .settings{max-width:900px}
 .group-title{color:var(--mut2);font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:1.8rem 0 .55rem .9rem}
 .group{background:rgba(28,28,30,.85);border-radius:var(--r);border:1px solid var(--line);overflow:hidden}
@@ -267,7 +267,7 @@ button.pill:focus{background:#fff;color:#000}
 .ip-list .row-btn:focus small,.ip-list .row-btn:focus .chev{color:rgba(0,0,0,.6)}
 .ip-resume{flex:0 0 auto;font-size:.8rem;font-weight:700;color:var(--accent)}
 .ip-done{flex:0 0 auto;font-size:.8rem;font-weight:700;color:var(--green)}
-.row-btn:focus .ip-resume{color:#0060df}.row-btn:focus .ip-done{color:#1a8f3c}
+.row-btn:focus .ip-resume{color:var(--red-d)}.row-btn:focus .ip-done{color:#1a8f3c}
 .ip-pbar{display:block;height:.22rem;border-radius:1rem;background:rgba(255,255,255,.15);margin-top:.45rem;max-width:18rem;overflow:hidden}
 .ip-pbar i{display:block;height:100%;background:var(--red)}
 .ip-skel{min-height:3.6rem;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.05) 50%,transparent 70%);background-size:300% 100%;animation:shimmer 1.4s infinite}
@@ -309,7 +309,7 @@ button.pill:focus{background:#fff;color:#000}
 .pm-item .ck{width:1rem;flex:0 0 auto;color:var(--accent);font-weight:800}
 .pm-item.muted{color:var(--mut)}
 .pm-item:focus{background:#fff;color:#000}
-.pm-item:focus .ck{color:#0060df}
+.pm-item:focus .ck{color:var(--red-d)}
 .pm-note{color:var(--mut);font-size:.8rem;line-height:1.45;padding:.6rem .6rem 0}
 video::cue{background:rgba(0,0,0,.65);font-family:Inter,sans-serif;font-size:1.05em}
 
@@ -355,4 +355,132 @@ video::cue{background:rgba(0,0,0,.65);font-family:Inter,sans-serif;font-size:1.0
 #view-cats .switch .lbl b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* deutlicherer Fokus in Listen (Fernbedienung) */
-.switch:focus,.row-btn:focus{background:rgba(255,255,255,.16);box-shadow:inset 4px 0 0 var(--accent)}
+.switch:focus,.row-btn:focus{background:rgba(255,255,255,.16);box-shadow:inset 4px 0 0 #fff}
+
+
+/* =====================================================================
+   Design 2.0 – Apple × Netflix
+   Glas nur auf der Bedienebene (Kopfzeile, Tableiste, Player, Menüs),
+   Inhalte bleiben opak. Weiß = Fokus, Netflix-Rot = Marke/Fortschritt/LIVE.
+   ===================================================================== */
+:root{
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --spring:cubic-bezier(.3,1.35,.45,1);
+  --hdr:4.3rem;
+  --glass-hi:inset 0 1px 0 rgba(255,255,255,.16),inset 0 0 0 1px rgba(255,255,255,.07);
+}
+body{background:radial-gradient(900px 480px at 85% -10%,rgba(229,9,20,.13),transparent 70%),
+  radial-gradient(1000px 520px at -10% 0%,rgba(94,92,230,.14),transparent 70%),#000;background-attachment:fixed}
+
+/* ---------- Kopfzeile: über dem Billboard transparent, beim Scrollen Glas ---------- */
+header{position:fixed;left:0;right:0;top:0;background:linear-gradient(rgba(0,0,0,.72),rgba(0,0,0,0)) border-box;border-bottom:1px solid transparent;
+  -webkit-backdrop-filter:none;backdrop-filter:none;transition:background .45s var(--ease-out),border-color .45s,-webkit-backdrop-filter .45s,backdrop-filter .45s}
+header.scrolled{background:rgba(14,14,16,.6);border-bottom-color:rgba(255,255,255,.07);
+  -webkit-backdrop-filter:blur(30px) saturate(160%);backdrop-filter:blur(30px) saturate(160%)}
+main{padding-top:var(--hdr)}
+#view-home{margin-top:calc(-1 * var(--hdr))}
+.brand{font-weight:800;letter-spacing:-.03em}
+.brand-icon{background:linear-gradient(150deg,#ff2a36,var(--red) 45%,var(--red-d));box-shadow:0 4px 16px rgba(229,9,20,.45),inset 0 1px 0 rgba(255,255,255,.35)}
+
+/* Tableiste: Glas-Kapsel mit gleitender Auswahl */
+.tabbar{position:relative;background:rgba(255,255,255,.08);box-shadow:var(--glass-hi);border-color:rgba(255,255,255,.06);
+  -webkit-backdrop-filter:blur(22px) saturate(150%);backdrop-filter:blur(22px) saturate(150%)}
+.tab-ind{position:absolute;left:0;top:.3rem;bottom:.3rem;width:0;border-radius:999px;background:rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.18);
+  transition:transform .5s var(--spring),width .5s var(--spring),opacity .3s;pointer-events:none}
+.tabbar button{position:relative;z-index:1}
+.tabbar button.active{background:transparent;color:var(--txt)}
+.tabbar button:focus{background:#fff;color:#000;transform:scale(1.07);box-shadow:0 8px 24px rgba(0,0,0,.45)}
+
+/* ---------- Billboard ---------- */
+.hero{height:min(80vh,660px);padding:0 var(--pad) 7.2rem;background:#000}
+.hero-bg{opacity:0;transform:scale(1.08);transition:opacity 1.2s var(--ease-out)}
+.hero-bg.show{opacity:1;animation:kenburns 16s ease-out forwards}
+@keyframes kenburns{from{transform:scale(1.08)}to{transform:scale(1)}}
+.hero::after{background:linear-gradient(to top,#000 0%,rgba(0,0,0,.6) 28%,transparent 60%),
+  linear-gradient(to right,rgba(0,0,0,.82),rgba(0,0,0,.25) 55%,transparent 80%),linear-gradient(rgba(0,0,0,.45),transparent 22%)}
+.hero h1{font-size:clamp(2.3rem,5.2vw,4rem);letter-spacing:-.045em;text-shadow:0 4px 30px rgba(0,0,0,.45)}
+.hero-logo{max-height:8rem}
+.hero .eyebrow{display:flex;align-items:center;gap:.6rem;color:rgba(255,255,255,.85);letter-spacing:.04em;text-transform:none;font-size:.86rem}
+.t10{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:1.9rem;height:1.9rem;border-radius:.3rem;background:var(--red);color:#fff;
+  font-size:.42rem;font-weight:800;letter-spacing:.06em;line-height:1;box-shadow:0 4px 14px rgba(229,9,20,.4)}
+.t10 b{font-size:.92rem;letter-spacing:-.04em}
+.hero-content.enter>*{animation:rise .8s var(--ease-out) both}
+.hero-content.enter>*:nth-child(2){animation-delay:.06s}
+.hero-content.enter>*:nth-child(3){animation-delay:.12s}
+.hero-content.enter>*:nth-child(4){animation-delay:.18s}
+.hero-content.enter>*:nth-child(5){animation-delay:.24s}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.hero-dots{bottom:7.6rem}
+.hero-dots i{transition:all .45s var(--spring)}
+/* Reihen schieben sich ins Billboard */
+#view-home>:not(.hero){position:relative;z-index:2}
+#homeTop{margin-top:-5.4rem}
+
+/* ---------- Ansichten: weicher Wechsel ---------- */
+.view.active{animation:viewIn .5s var(--ease-out)}
+@keyframes viewIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.section-label{font-size:1.22rem;margin:1.7rem 0 .1rem}
+
+/* ---------- Kacheln: Fokus-Lift mit Lichtreflex (Apple TV) ---------- */
+.tile .art{border-radius:12px;transition:transform .5s var(--spring),box-shadow .45s var(--ease-out)}
+.tile .art::after{background:linear-gradient(115deg,transparent 32%,rgba(255,255,255,.26) 47%,rgba(255,255,255,.06) 55%,transparent 64%);
+  background-size:260% 100%;background-position:130% 0;opacity:0;transition:opacity .3s}
+.tile:focus .art,.tile:hover .art{transform:scale(1.08) translateY(-.35rem);box-shadow:0 0 0 3px #fff,0 26px 50px rgba(0,0,0,.75)}
+.tile:focus .art::after{opacity:1;animation:sheen 1.2s .08s var(--ease-out) both}
+@keyframes sheen{from{background-position:130% 0}to{background-position:-60% 0}}
+.tile:focus .caption{transform:translateY(.45rem)}
+.tile .star,.tile .ep-badge{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(0,0,0,.6)}
+.tile.show .rank{font-size:3.4rem;-webkit-text-stroke:1px rgba(0,0,0,.25)}
+.fx .tile img:not(.ok){opacity:0}
+.tile img{transition:opacity .5s var(--ease-out)}
+.tile .pbar i,.ip-pbar i{background:var(--red)}
+
+/* ---------- Buttons & Chips ---------- */
+.btn{background:rgba(255,255,255,.13);border-color:rgba(255,255,255,.1);box-shadow:var(--glass-hi);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);backdrop-filter:blur(18px) saturate(150%);transition:transform .4s var(--spring),background .25s,box-shadow .3s,color .25s}
+.btn.primary{background:rgba(255,255,255,.92);color:#000;box-shadow:none}
+.btn:focus{background:#fff;color:#000;transform:scale(1.07);box-shadow:0 0 0 3px rgba(255,255,255,.4),0 12px 32px rgba(0,0,0,.55)}
+.chip{transition:transform .4s var(--spring),background .25s,color .25s}
+.chip.active{background:rgba(255,255,255,.18);color:var(--txt);box-shadow:inset 0 1px 0 rgba(255,255,255,.14)}
+.mini{transition:transform .4s var(--spring),background .2s,color .2s}
+
+/* ---------- Detailansicht ---------- */
+.sheet .bd{transition:filter .6s var(--ease-out),transform .8s var(--ease-out)}
+.sheet.anim .bd{animation:bdIn 1.1s var(--ease-out) both}
+@keyframes bdIn{from{opacity:0;transform:scale(1.06)}to{opacity:1;transform:scale(1)}}
+.sheet.anim .inner>*,.sheet.anim .ip-head>*{animation:rise .7s var(--ease-out) both}
+.sheet.anim .inner>*:nth-child(2),.sheet.anim .ip-head>*:nth-child(2){animation-delay:.05s}
+.sheet.anim .inner>*:nth-child(3),.sheet.anim .ip-head>*:nth-child(3){animation-delay:.1s}
+.sheet.anim .inner>*:nth-child(4),.sheet.anim .ip-head>*:nth-child(4){animation-delay:.15s}
+.sheet.anim .inner>*:nth-child(n+5){animation-delay:.2s}
+.sheet.anim .ip-body{animation:rise .7s .18s var(--ease-out) both}
+.sheet .bd::after{background:linear-gradient(to right,#000 6%,rgba(0,0,0,.72) 40%,rgba(0,0,0,.1) 75%),linear-gradient(to top,#000,transparent 50%)}
+.ip-list{box-shadow:var(--glass-hi)}
+.ip-list .row-btn{transition:background .2s,transform .35s var(--spring)}
+
+/* ---------- Player ---------- */
+#osd{background:rgba(24,24,28,.55);box-shadow:var(--glass-hi),0 18px 50px rgba(0,0,0,.5);transition:opacity .5s var(--ease-out),transform .5s var(--spring)}
+#osd.hide{transform:translateY(1.4rem) scale(.98)}
+#status{box-shadow:var(--glass-hi)}
+.pmenu,.clist{box-shadow:var(--glass-hi),0 18px 50px rgba(0,0,0,.55)}
+.osd-prog .bar i{background:#fff}
+.cl-row{transition:background .2s}
+
+/* ---------- Toast ---------- */
+#toast{box-shadow:var(--glass-hi),0 12px 40px rgba(0,0,0,.5);transition:opacity .35s,transform .55s var(--spring)}
+
+/* ---------- Einstellungen (Inhaltsebene: opak, kein Glas) ---------- */
+.group{background:rgba(28,28,30,.88);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+
+/* ---------- Weniger Bewegung / Transparenz ---------- */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
+body.lite *,body.lite *::before,body.lite *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.08s!important;
+  -webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+body.lite header.scrolled,body.lite .tabbar,body.lite #osd,body.lite .pmenu,body.lite .clist,body.lite #toast,body.lite #status,body.lite .ip-list{background:rgba(22,22,24,.97)}
+body.lite .btn{background:rgba(58,58,62,.95)}body.lite .btn.primary,body.lite .btn:focus{background:#fff}
+@media (prefers-reduced-transparency:reduce){
+  header.scrolled,.tabbar,#osd,.pmenu,.clist,#toast,#status,.ip-list,.btn{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgba(22,22,24,.97)}
+  .btn.primary,.btn:focus{background:#fff}
+}
