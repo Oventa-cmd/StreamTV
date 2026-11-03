@@ -219,9 +219,9 @@ function resumeTileHTML(v) {
   const left = v.dur ? Math.max(1, Math.round((v.dur - v.pos) / 60)) : 0;
   return `<div class="tile show cont focusable" tabindex="0" data-resume="${esc(v.id)}">
     <div class="art">${m.img ? `<img class="bd" src="${esc(m.img)}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="ini">${esc(initials(m.show))}</span>`}
-      <div class="shade"></div><span class="ep-badge">S${esc(m.season)} E${esc(m.num)}</span>
+      <div class="shade"></div><span class="ep-badge">${m.movie ? 'Film' : `S${esc(m.season)} E${esc(m.num)}`}</span>
       <div class="t">${esc(m.show)}</div><span class="pbar"><i style="width:${pct.toFixed(1)}%"></i></span></div>
-    <div class="caption">${esc(m.title)}${left ? ` · noch ${left} Min.` : ''}</div>
+    <div class="caption">${esc([m.movie ? '' : m.title, left ? `noch ${left} Min.` : ''].filter(Boolean).join(' · ')) || '&nbsp;'}</div>
   </div>`;
 }
 function continueRail() {
@@ -290,7 +290,7 @@ function renderSearch() {
   const q = $('#q').value.trim().toLowerCase();
   const res = q ? state.channels.filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q)) : [];
   $('#searchInfo').textContent = q ? `${res.length} Sender` + (res.length > GRID_MAX ? ` – die ersten ${GRID_MAX} werden angezeigt` : '') : '';
-  $('#searchGrid').innerHTML = !q ? `<p class="empty">Sender, Kategorie oder Serie eingeben.</p>`
+  $('#searchGrid').innerHTML = !q ? `<p class="empty">Sender, Kategorie, Serie oder Film eingeben.</p>`
     : res.length ? res.slice(0, GRID_MAX).map(tileHTML).join('') : '';
 }
 let searchTimer = null;
@@ -302,7 +302,7 @@ function searchShows() {
     try {
       const res = await TM.search(q);
       if ($('#q').value.trim() !== q) return;
-      keepFocus(() => { $('#searchShows').innerHTML = res.length ? railHTML('Serien', res.slice(0, 20).map(p => showTileHTML(p)).join(''), res.length) : ''; });
+      keepFocus(() => { $('#searchShows').innerHTML = res.length ? railHTML('Serien & Filme', res.slice(0, 20).map(p => showTileHTML(p)).join(''), res.length) : ''; });
     } catch (e) { $('#searchShows').innerHTML = ''; }
   }, 450);
 }
@@ -475,7 +475,8 @@ function renderSheet(p, d) {
   $('#sheetBd').style.backgroundImage = bd ? `url("${TM.IMG}w1280${bd}")` : 'none';
   const logo = d && TM.pickLogo(d);
   const genres = d ? TM.genres(d).slice(0, 3) : [];
-  const seasons = d && d.number_of_seasons ? `${d.number_of_seasons} Staffel${d.number_of_seasons > 1 ? 'n' : ''}` : null;
+  const seasons = d && d.number_of_seasons ? `${d.number_of_seasons} Staffel${d.number_of_seasons > 1 ? 'n' : ''}`
+    : d && d.runtime ? `${Math.floor(d.runtime / 60) ? Math.floor(d.runtime / 60) + ' Std. ' : ''}${d.runtime % 60} Min.` : null;
   const meta = [TM.info(p), seasons, genres.join(', ') || null].filter(Boolean).join(' · ');
   const prov = d ? TM.providersDE(d) : [];
   const onList = WL.connected && WL.keys().has(key);
@@ -559,7 +560,7 @@ async function selectHit(i) {
   renderIptv();
   const tok = ip.token;
   try {
-    const info = await XS.info(h.acc, h.it.sid);
+    const info = ip.p.type === 'movie' ? await XS.movie(h.acc, h.it) : await XS.info(h.acc, h.it.sid);
     if (!ip || ip.token !== tok || ip.sel !== h) return;
     ip.info = info; ip.status = 'show';
     ip.season = resumeEp(info) ? resumeEp(info).season : info.seasons[0].num;
@@ -582,13 +583,17 @@ function renderIptv(focusResume) {
   const { p } = ip;
   const focusedKey = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.ipk;
   const accNames = [...new Set(XS.accounts().map(a => a.name))].join(', ');
+  const film = p.type === 'movie';
   let body = '', sub = '';
-  if (ip.status === 'loading') sub = `Durchsuche den Serienkatalog von ${accNames || 'deinem Anbieter'} … (beim ersten Mal etwas länger)`;
+  if (ip.status === 'loading') sub = `Durchsuche den ${film ? 'Filmkatalog' : 'Serienkatalog'} von ${accNames || 'deinem Anbieter'} … (beim ersten Mal etwas länger)`;
   else if (ip.status === 'error') sub = ip.msg;
-  else if (ip.status === 'empty') sub = 'Diese Serie wurde im Katalog deines Anbieters nicht gefunden.';
+  else if (ip.status === 'empty') sub = `${film ? 'Dieser Film' : 'Diese Serie'} wurde im Katalog deines Anbieters nicht gefunden.`;
   else if (ip.status === 'list') sub = `${ip.hits.length} mögliche Treffer – bitte auswählen`;
-  else if (ip.status === 'loadingShow') sub = `Lade Folgen von „${ip.sel.it.name}“ …`;
-  else if (ip.status === 'show') {
+  else if (ip.status === 'loadingShow') sub = `Lade ${film ? 'Film' : 'Folgen von'} „${ip.sel.it.name}“ …`;
+  else if (ip.status === 'show' && ip.info.movie) {
+    const e = ip.info.seasons[0].eps[0];
+    sub = [ip.sel.it.name, ip.sel.it.year, e.dur ? Math.round(e.dur / 60) + ' Min.' : '', ip.sel.acc.name].filter(Boolean).join(' · ');
+  } else if (ip.status === 'show') {
     const n = ip.info.seasons.reduce((a, s) => a + s.eps.length, 0);
     sub = `${ip.sel.it.name} · ${ip.info.seasons.length} Staffel${ip.info.seasons.length > 1 ? 'n' : ''} · ${n} Folgen · ${ip.sel.acc.name}`;
   }
@@ -612,7 +617,7 @@ function renderIptv(focusResume) {
       const right = done ? '<span class="ip-done">✓ Gesehen</span>' : v && v.pos > 30 ? `<span class="ip-resume">Weiter bei ${fmtTime(v.pos)}</span>` : '<span class="chev">▶</span>';
       const pct = v && v.dur ? Math.min(100, v.pos / v.dur * 100) : 0;
       return `<button class="row-btn ip-ep focusable" data-ipk="e${e.id}" data-ip="ep" data-s="${season.num}" data-i="${i}">
-        <span class="lbl"><b>${e.num}. ${esc(e.title)}</b><small>${esc([dur ? Math.round(dur / 60) + ' Min.' : '', e.plot].filter(Boolean).join(' · '))}</small>
+        <span class="lbl"><b>${e.movie ? '▶ Film abspielen' : `${e.num}. ${esc(e.title)}`}</b><small>${esc([dur ? Math.round(dur / 60) + ' Min.' : '', e.plot].filter(Boolean).join(' · '))}</small>
         ${pct > 0 && !done ? `<span class="ip-pbar"><i style="width:${pct.toFixed(1)}%"></i></span>` : ''}</span>${right}
       </button>`;
     }).join('')}</div>`;
@@ -621,7 +626,7 @@ function renderIptv(focusResume) {
   }
   $('#sheetInner').innerHTML = `
     <div class="ip-head">
-      <div class="eyebrow">Beim Anbieter · IPTV-Serien</div>
+      <div class="eyebrow">Beim Anbieter · ${film ? 'IPTV-Filme' : 'IPTV-Serien'}</div>
       <h1>${esc(p.title)}</h1>
       <div class="meta ${ip.status === 'error' ? 'err' : ''}">${esc(sub)}</div>
       <div class="btn-row">${btns.join('')}</div>
@@ -657,7 +662,7 @@ function iptvClick(el) {
     const ep = ip.info.seasons.find(s => s.num === Number(el.dataset.s)).eps[Number(el.dataset.i)];
     const p = ip.p, h = ip.sel;
     const img = p.backdrop ? `${TM.IMG}w780${p.backdrop}` : p.poster ? `${TM.IMG}w500${p.poster}` : h.it.cover || '';
-    openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: h.it.sid, img, src: h.acc.name, name: p.title });
+    openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: (ep.movie ? 'm' : '') + h.it.sid, img, src: h.acc.name, name: p.title });
   }
 }
 
@@ -792,7 +797,8 @@ function setVod(v) {
   $('#player').classList.toggle('vod', !!v);
   $('#pProg').classList.toggle('hidden', !v);
   $('#pFav').classList.toggle('hidden', !!v);
-  $('#pSub').textContent = v ? '◀▶ Spulen · ▲▼ Folge wechseln · OK Pause · Zurück schließen' : '▲▼ Sender wechseln · OK Pause · Zurück schließen';
+  $('#pSub').textContent = v ? (v.ep.movie ? '◀▶ Spulen · OK Pause · Zurück schließen' : '◀▶ Spulen · ▲▼ Folge wechseln · OK Pause · Zurück schließen')
+    : '▲▼ Sender wechseln · OK Pause · Zurück schließen';
 }
 /** ctx = Herkunft für „Weiterschauen“: { acc, sid, img, src } */
 function openVod(list, idx, show, ctx) {
@@ -805,9 +811,9 @@ function openVod(list, idx, show, ctx) {
   enterPlayer();
   setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false });
   currentId = null;
-  $('#pTitle').textContent = `${ep.num}. ${ep.title}`;
-  $('#pGroup').textContent = `${show} · Staffel ${ep.season}`;
-  $('#pLogo').textContent = `S${ep.season}`;
+  $('#pTitle').textContent = ep.movie ? (ctx && ctx.name) || show : `${ep.num}. ${ep.title}`;
+  $('#pGroup').textContent = ep.movie ? 'Film' + (ctx && ctx.src ? ' · ' + ctx.src : '') : `${show} · Staffel ${ep.season}`;
+  $('#pLogo').textContent = ep.movie ? 'FILM' : `S${ep.season}`;
   updateProg();
   loadStream(ep.url);
   showOsd();
@@ -816,7 +822,7 @@ function saveVodPos() {
   if (!vod || !video.duration || !isFinite(video.duration) || video.currentTime < 5) return;
   const e = vod.ep, c = vod.ctx;
   VP.set(e.id, video.currentTime, video.duration, c ? {
-    show: (c && c.name) || vod.show, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || ''
+    show: (c && c.name) || vod.show, movie: !!e.movie, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || ''
   } : null);
 }
 /* ---------- Weiterschauen ---------- */
@@ -827,7 +833,8 @@ async function playResume(id) {
   const m = v.m;
   let list = [{ id, num: m.num, season: m.season, title: m.title, url: m.url, dur: v.dur, plot: '' }], idx = 0;
   const acc = XS.accounts().find(a => a.key === m.acc);
-  if (acc) {   // komplette Folgenliste holen, damit ▲▼ und „Nächste Folge“ funktionieren
+  if (m.movie) list[0].movie = true;
+  else if (acc) {   // komplette Folgenliste holen, damit ▲▼ und „Nächste Folge“ funktionieren
     resumeBusy = true;
     const cached = XS.info_[acc.key + ':' + m.sid];
     if (!cached) toast('Lade Folgen …');
@@ -900,6 +907,7 @@ function closePlayer(fromPop) {
 }
 function zap(step) {
   if (vod) {
+    if (vod.ep.movie) return;
     const i = vod.idx + step;
     if (i < 0 || i >= vod.list.length) { toast(step > 0 ? 'Letzte Folge' : 'Erste Folge'); return; }
     return openVod(vod.list, i, vod.show, vod.ctx);

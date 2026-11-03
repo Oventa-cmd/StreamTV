@@ -158,17 +158,22 @@ const TM = {
       .filter(Boolean).join(' · ');
   },
 
-  /** Reiter wie im TV-Launcher – mit Fokus auf Serien. */
+  /** Reiter wie im TV-Launcher – erst Serien, dann Filme. */
   tabs() {
     const seeds = WL.connected ? WL.seeds() : [];
     const because = seeds.filter(s => s.weight > 0 && s.type === 'tv').sort((a, b) => b.weight - a.weight)[0];
+    const movieSeeds = seeds.some(s => s.weight > 0 && s.type === 'movie');
     return [
       seeds.length ? { id: 'forYou', label: 'Serien für dich' } : null,
       { id: 'top', label: 'Top 10 Serien diese Woche', rank: true },
       because ? { id: 'because', label: `Weil du „${because.title}“ magst`, seed: because } : null,
       { id: 'new', label: 'Neu bei Netflix & Prime' },
       { id: 'best', label: 'Bestbewertete Serien' },
-      { id: 'hidden', label: 'Geheimtipps' }
+      { id: 'hidden', label: 'Geheimtipps' },
+      movieSeeds ? { id: 'mForYou', label: 'Filme für dich' } : null,
+      { id: 'mTop', label: 'Top 10 Filme diese Woche', rank: true },
+      { id: 'mNew', label: 'Neue Filme bei Netflix & Prime' },
+      { id: 'mBest', label: 'Bestbewertete Filme' }
     ].filter(Boolean);
   },
   seedSig() { return WL.seeds().map(s => `${s.type}:${s.id}:${s.weight}`).join('|'); },
@@ -194,6 +199,18 @@ const TM = {
       list = this.picks(await this.get('/discover/tv', {
         sort_by: 'vote_average.desc', 'vote_average.gte': '7.8', 'vote_count.gte': '150', 'vote_count.lte': '1500'
       }), 'tv');
+    }
+    else if (tab.id === 'mTop') {
+      list = this.picks(await this.get('/trending/movie/week'), 'movie');
+    } else if (tab.id === 'mForYou') {
+      list = await this.recs('movie');
+    } else if (tab.id === 'mNew') {
+      list = this.picks(await this.get('/discover/movie', {
+        watch_region: 'DE', with_watch_providers: '8|9', sort_by: 'popularity.desc', 'vote_count.gte': '20', 'primary_release_date.gte': since
+      }), 'movie');
+    } else if (tab.id === 'mBest') {
+      const [a, b] = await Promise.all([1, 2].map(p => this.get('/movie/top_rated', { page: String(p) })));
+      list = this.picks(a, 'movie').concat(this.picks(b, 'movie'));
     }
     const seen = new Set();
     return list.filter(p => (p.backdrop || p.poster) && !seen.has(p.type + ':' + p.id) && seen.add(p.type + ':' + p.id));
@@ -227,7 +244,7 @@ const TM = {
   },
 
   async ensure(tab, force) {
-    const sig = ['forYou', 'because'].includes(tab.id) ? this.seedSig() : '';
+    const sig = ['forYou', 'because', 'mForYou'].includes(tab.id) ? this.seedSig() : '';
     const c = this.cache[tab.id];
     if (!force && c && Date.now() - c.at < this.TTL && c.sig === sig) return;
     if (this.loading.has(tab.id)) return;
@@ -253,8 +270,8 @@ const TM = {
     return (this.searchRes || []).find(x => x.type + ':' + x.id === key) || null;
   },
   async search(q) {
-    const j = await this.get('/search/tv', { query: q, include_adult: 'false' });
-    this.searchRes = this.picks(j, 'tv').filter(p => p.backdrop || p.poster);
+    const j = await this.get('/search/multi', { query: q, include_adult: 'false' });
+    this.searchRes = this.picks(j).filter(p => p.backdrop || p.poster);
     return this.searchRes;
   },
   async details(type, id) {

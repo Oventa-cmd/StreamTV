@@ -42,23 +42,26 @@ const XS = {
     return m ? m[0] : '';
   },
 
-  async catalog(acc, force) {
-    const c = this.cat_[acc.key];
+  /** Katalog eines Zugangs – kind: 'series' (Serien) oder 'vod' (Filme). Nur im Speicher (kann sehr groß sein). */
+  async catalog(acc, force, kind = 'series') {
+    const ck = kind + '|' + acc.key, c = this.cat_[ck];
     if (!force && c && Date.now() - c.at < this.TTL) return c;
+    const vod = kind === 'vod';
     const [list, cats] = await Promise.all([
-      getJSON(this.api(acc, 'get_series')),
-      getJSON(this.api(acc, 'get_series_categories')).catch(() => [])
+      getJSON(this.api(acc, vod ? 'get_vod_streams' : 'get_series')),
+      getJSON(this.api(acc, vod ? 'get_vod_categories' : 'get_series_categories')).catch(() => [])
     ]);
-    if (!Array.isArray(list)) throw new Error('Anbieter liefert keinen Serienkatalog');
+    if (!Array.isArray(list)) throw new Error(vod ? 'Anbieter bietet keine Filme (VOD) an' : 'Anbieter liefert keinen Serienkatalog');
     const names = new Map((Array.isArray(cats) ? cats : []).map(x => [String(x.category_id), x.category_name]));
     const items = list.map(o => {
       const n = this.norm(o.name);
       return {
-        sid: o.series_id, name: o.name || 'Unbenannt', n, t: this.tokens(n), year: this.yearOf(o),
-        tmdb: Number(o.tmdb || o.tmdb_id) || 0, cover: o.cover || '', cat: names.get(String(o.category_id)) || ''
+        sid: vod ? o.stream_id : o.series_id, name: o.name || 'Unbenannt', n, t: this.tokens(n), year: this.yearOf(o),
+        tmdb: Number(o.tmdb || o.tmdb_id) || 0, cover: (vod ? o.stream_icon : o.cover) || '', cat: names.get(String(o.category_id)) || '',
+        ext: vod ? (o.container_extension || 'mp4') : ''
       };
     });
-    return (this.cat_[acc.key] = { at: Date.now(), list: items });
+    return (this.cat_[ck] = { at: Date.now(), list: items });
   },
 
   score(q, it) {
@@ -73,17 +76,20 @@ const XS = {
     return s;
   },
 
-  /** Treffer für eine TMDB-Serie in allen Xtream-Quellen. */
+  /** Treffer für eine TMDB-Serie (bzw. einen Film) in allen Xtream-Quellen. */
   async find(p, d) {
+    const kind = p.type === 'movie' ? 'vod' : 'series';
     const accs = this.accounts();
     if (!accs.length) throw new Error('Keine Xtream-Quelle eingerichtet – unter „Einstellungen“ hinzufügen.');
-    const titles = [...new Set([p.title, d && d.name, d && d.original_name].filter(Boolean))];
+    const titles = [...new Set([p.title, d && (d.name || d.title), d && (d.original_name || d.original_title)].filter(Boolean))];
     const qs = titles.map(t => { const n = this.norm(t); return { n, t: this.tokens(n) }; }).filter(q => q.t.length);
-    const year = p.year || (d && String(d.first_air_date || '').slice(0, 4)) || '';
+    const year = p.year || (d && String(d.first_air_date || d.release_date || '').slice(0, 4)) || '';
     const errors = [], hits = [];
+    let total = 0;
     await Promise.all(accs.map(async acc => {
       let cat;
-      try { cat = await this.catalog(acc); } catch (e) { errors.push(`${acc.name}: ${e.message}`); return; }
+      try { cat = await this.catalog(acc, false, kind); } catch (e) { errors.push(`${acc.name}: ${e.message}`); return; }
+      total += cat.list.length;
       for (const it of cat.list) {
         let s = it.tmdb && it.tmdb === p.id ? 120 : 0;
         for (const q of qs) s = Math.max(s, this.score(q, it));
@@ -94,6 +100,7 @@ const XS = {
     }));
     hits.sort((a, b) => b.s - a.s || a.it.name.length - b.it.name.length);
     if (!hits.length && errors.length) throw new Error(errors.join(' · '));
+    if (!total) throw new Error(kind === 'vod' ? 'Dein Anbieter bietet keine Filme (VOD) an.' : 'Dein Anbieter bietet keine Serien an.');
     return hits.slice(0, 20);
   },
 
@@ -121,6 +128,24 @@ const XS = {
       })).filter(s => s.eps.length);
     if (!seasons.length) throw new Error('Keine Folgen beim Anbieter gefunden');
     return (this.info_[k] = { seasons });
+  },
+  /** Ein Film als „Folgenliste“ mit einem Eintrag – gleicher Player, gleiches Fortsetzen. */
+  async movie(acc, it) {
+    const k = acc.key + ':m' + it.sid;
+    if (this.info_[k]) return this.info_[k];
+    let inf = {}, ext = it.ext;
+    try {
+      const j = await getJSON(this.api(acc, 'get_vod_info', '&vod_id=' + encodeURIComponent(it.sid)));
+      inf = (j && j.info) || {};
+      if (j && j.movie_data && j.movie_data.container_extension) ext = j.movie_data.container_extension;
+    } catch (e) {}   // Infos sind optional – abspielen geht auch ohne
+    const ep = {
+      id: 'm' + it.sid, num: 1, season: 0, movie: true, title: it.name,
+      plot: inf.plot || inf.description || '',
+      dur: Number(inf.duration_secs) || this.secs(inf.duration) || 0,
+      url: `${acc.base}/movie/${acc.u}/${acc.p}/${it.sid}.${ext || 'mp4'}`
+    };
+    return (this.info_[k] = { movie: true, seasons: [{ num: 0, eps: [ep] }] });
   },
   epTitle(t, n) {
     const s = String(t || '').replace(/^.*?S\d{1,2}\s*E\d{1,3}\s*[-–:|]?\s*/i, '').trim();
