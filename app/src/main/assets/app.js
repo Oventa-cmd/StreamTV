@@ -479,6 +479,7 @@ async function loadDiscover(force) {
   try {
     if (WL.connected) {
       await WL.refreshItems(force).catch(() => {});
+      WL.flush().then(n => { if (n) toast(`Watchlist: ${n} gesehene Folge${n > 1 ? 'n' : ''} nachgetragen`); }).catch(() => {});
       if (!TM.key()) await WL.tmdbKey().catch(() => {});
     }
   } catch (e) {}
@@ -693,7 +694,7 @@ function iptvClick(el) {
     const ep = ip.info.seasons.find(s => s.num === Number(el.dataset.s)).eps[Number(el.dataset.i)];
     const p = ip.p, h = ip.sel;
     const img = p.backdrop ? `${TM.IMG}w780${p.backdrop}` : p.poster ? `${TM.IMG}w500${p.poster}` : h.it.cover || '';
-    openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: (ep.movie ? 'm' : '') + h.it.sid, img, src: h.acc.name, name: p.title });
+    openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: (ep.movie ? 'm' : '') + h.it.sid, img, src: h.acc.name, name: p.title, tmdb: p.type + ':' + p.id });
   }
 }
 
@@ -844,7 +845,7 @@ function openVod(list, idx, show, ctx) {
     if (v && v.installed && !v.active) { toast('Kein VPN – ProtonVPN wird geöffnet'); setTimeout(() => bridge.openVpn(), 900); return; }
   }
   enterPlayer();
-  setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false });
+  setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false, synced: false });
   currentId = null;
   $('#pTitle').textContent = ep.movie ? (ctx && ctx.name) || show : `${ep.num}. ${ep.title}`;
   $('#pGroup').textContent = ep.movie ? 'Film' + (ctx && ctx.src ? ' · ' + ctx.src : '') : `${show} · Staffel ${ep.season}`;
@@ -857,8 +858,23 @@ function saveVodPos() {
   if (!vod || !video.duration || !isFinite(video.duration) || video.currentTime < 5) return;
   const e = vod.ep, c = vod.ctx;
   VP.set(e.id, video.currentTime, video.duration, c ? {
-    show: (c && c.name) || vod.show, movie: !!e.movie, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || ''
+    show: (c && c.name) || vod.show, movie: !!e.movie, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || '', tmdb: c.tmdb || ''
   } : null);
+}
+/* ---------- Watchlist-Sync (ab 90 % gesehen) ---------- */
+async function syncWatched(v) {
+  v.synced = true;
+  const t = v.ctx && v.ctx.tmdb ? String(v.ctx.tmdb).split(':') : null;
+  if (!t || !t[1] || !WL.connected) return;
+  const job = { type: t[0] === 'movie' ? 'movie' : 'tv', id: Number(t[1]), season: Number(v.ep.season) || 0, num: Number(v.ep.num) || 0 };
+  try {
+    const st = await WL.markWatched(job.type, job.id, job.season, job.num);
+    if (st) toast(job.type === 'movie' ? '✓ Watchlist: Film als gesehen markiert'
+      : `✓ Watchlist: S${job.season} E${job.num} gesehen${st === 'done' ? ' – Serie abgeschlossen' : ''}`);
+  } catch (e) {
+    WL.queue(job);
+    toast('Watchlist nicht erreichbar – wird später übertragen');
+  }
 }
 /* ---------- Weiterschauen ---------- */
 let resumeBusy = false;
@@ -880,7 +896,7 @@ async function playResume(id) {
     } catch (e) {} finally { resumeBusy = false; }
   }
   if (playerOpen) return;
-  openVod(list, idx, m.show, { acc: m.acc, sid: m.sid, img: m.img, src: m.src, name: m.show });
+  openVod(list, idx, m.show, { acc: m.acc, sid: m.sid, img: m.img, src: m.src, name: m.show, tmdb: m.tmdb });
 }
 function hideResume(id) {
   VP.hide(id);
@@ -915,11 +931,13 @@ let vodSaveAt = 0;
 video.addEventListener('timeupdate', () => {
   if (!vod) return;
   updateProg();
+  if (!vod.synced && isFinite(video.duration) && video.duration > 60 && video.currentTime / video.duration >= 0.9) syncWatched(vod);
   if (Date.now() - vodSaveAt > 10000) { vodSaveAt = Date.now(); saveVodPos(); }
 });
 video.addEventListener('ended', () => {
   if (!vod) return;
   saveVodPos();
+  if (!vod.synced) syncWatched(vod);
   if (vod.idx + 1 < vod.list.length) { toast('Nächste Folge'); openVod(vod.list, vod.idx + 1, vod.show, vod.ctx); }
   else closePlayer();
 });

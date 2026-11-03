@@ -108,6 +108,72 @@ const WL = {
     const r = await this.http('UPSERT', '/rest/v1/items?on_conflict=user_id,media_type,tmdb_id', [row]);
     if (r.status < 200 || r.status > 299) throw new Error('Speichern fehlgeschlagen (' + r.status + ')');
     await this.refreshItems(true);
+  },
+
+  /* ---------- Gesehen-Status aus dem Player übernehmen ---------- */
+  /** Ist (Staffel, Folge) die letzte bekannte Folge laut meta (aired bzw. seasons)? */
+  isLast(meta, season, num) {
+    const a = meta && Array.isArray(meta.aired) && meta.aired[0] ? meta.aired : null;
+    const s = meta && Array.isArray(meta.seasons) && meta.seasons.length ? meta.seasons[meta.seasons.length - 1] : null;
+    const last = a || s;
+    return !!last && (season > last[0] || (season === last[0] && num >= last[1]));
+  },
+  /** Folge (bzw. Film) als gesehen eintragen. Fehlt der Titel, wird er wie bei addPlanned angelegt. */
+  async markWatched(type, id, season, num) {
+    if (!this.connected) return null;
+    if (!await this.ensureToken()) throw new Error('Watchlist: bitte neu anmelden');
+    const q = `/rest/v1/items?media_type=eq.${encodeURIComponent(type)}&tmdb_id=eq.${Number(id)}`;
+    const g = await this.http('GET', q + '&select=status,progress,meta');
+    if (g.status < 200 || g.status > 299) throw new Error('Watchlist nicht erreichbar (' + g.status + ')');
+    const row = JSON.parse(g.text)[0] || null;
+    const now = new Date().toISOString();
+    const add = (prog) => {
+      if (type !== 'tv') return prog;
+      const p = Object.assign({}, prog), k = String(season);
+      p[k] = [...new Set([...(Array.isArray(p[k]) ? p[k] : []), num])].sort((a, b) => a - b);
+      return p;
+    };
+    let status;
+    if (row) {
+      const last = type !== 'tv' || this.isLast(row.meta, season, num);
+      status = row.status === 'done' || last ? 'done' : 'watching';
+      const r = await this.http('PATCH', q, { progress: add(row.progress || {}), status, updated_at: now });
+      if (r.status < 200 || r.status > 299) throw new Error('Watchlist-Speichern fehlgeschlagen (' + r.status + ')');
+    } else {
+      const d = await TM.details(type, id);
+      const meta = TM.metaOf(type, d);
+      status = type !== 'tv' || this.isLast(meta, season, num) ? 'done' : 'watching';
+      const pos = (this.s.items || []).filter(o => o.status === status).reduce((m, o) => Math.max(m, Number(o.position) || 0), 0) + 1;
+      const r = await this.http('UPSERT', '/rest/v1/items?on_conflict=user_id,media_type,tmdb_id', [{
+        user_id: this.s.uid, media_type: type, tmdb_id: d.id, title: TM.nameOf(d),
+        poster_path: d.poster_path || null, backdrop_path: d.backdrop_path || null, logo_path: TM.pickLogo(d),
+        status, position: pos, rating: null, note: null,
+        progress: add({}), meta, added_at: now, updated_at: now
+      }]);
+      if (r.status < 200 || r.status > 299) throw new Error('Watchlist-Speichern fehlgeschlagen (' + r.status + ')');
+    }
+    await this.refreshItems(true).catch(() => {});
+    return status;
+  },
+  /** Nicht übertragene Einträge (z. B. offline) – werden beim nächsten Start nachgeholt. */
+  queue(job) {
+    const p = this.s.pending || [];
+    if (!p.some(j => j.type === job.type && j.id === job.id && j.season === job.season && j.num === job.num)) p.push(job);
+    this.s.pending = p.slice(-50);
+    this.save();
+  },
+  async flush() {
+    const p = (this.s.pending || []).slice();
+    if (!p.length || !this.connected) return 0;
+    let n = 0;
+    for (const j of p) {
+      try {
+        await this.markWatched(j.type, j.id, j.season, j.num);
+        this.s.pending = (this.s.pending || []).filter(x => x !== j && !(x.type === j.type && x.id === j.id && x.season === j.season && x.num === j.num));
+        this.save(); n++;
+      } catch (e) { break; }
+    }
+    return n;
   }
 };
 
