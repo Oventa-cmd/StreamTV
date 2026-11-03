@@ -17,6 +17,7 @@
     <button class="focusable" data-view="home">Start</button>
     <button class="focusable" data-view="discover">Entdecken</button>
     <button class="focusable" data-view="series">Serien</button>
+    <button class="focusable" data-view="sport">Sport</button>
     <button class="focusable" data-view="search">Suche</button>
     <button class="focusable" data-view="favorites">Favoriten</button>
     <button class="focusable" data-view="manage">Kanäle</button>
@@ -58,6 +59,14 @@
     </div>
     <div class="chips" id="serChips"></div>
     <div id="serBody"></div>
+  </section>
+
+  <!-- ================= Sport ================= -->
+  <section class="view" id="view-sport">
+    <div class="pad"><h1 class="large-title">Sport <small class="title-count" id="spInfo"></small></h1></div>
+    <div class="chips" id="spChips"></div>
+    <div id="spRows"></div>
+    <p class="group-foot pad" id="spFoot"></p>
   </section>
 
   <!-- ================= Kategorien ausblenden ================= -->
@@ -188,6 +197,9 @@
       <!-- Allgemein -->
       <div class="group-title">Allgemein</div>
       <div class="group">
+        <div class="row-item"><div class="meta"><b>Bildschirmschoner</b><small>Serien-Plakate nach einer Weile ohne Eingabe (nicht während der Wiedergabe)</small></div>
+          <div class="seg" id="saverSeg"><button class="focusable" data-saver="0" type="button">Aus</button><button class="focusable" data-saver="2" type="button">2 Min.</button><button class="focusable" data-saver="5" type="button">5 Min.</button><button class="focusable" data-saver="10" type="button">10 Min.</button></div>
+          <div class="actions"><button class="mini focusable" id="saverNow" type="button">Vorschau</button></div></div>
         <button class="switch focusable" id="swLite" type="button"><span class="lbl"><b>Effekte reduzieren</b><small>Weniger Unschärfe und Animationen – flüssiger auf älteren Fire-TV-Geräten</small></span><span class="knob"></span></button>
         <button class="switch focusable" id="swAuto" type="button"><span class="lbl"><b>Quellen beim Start aktualisieren</b><small>Wenn die letzte Aktualisierung über 6 Stunden her ist</small></span><span class="knob"></span></button>
         <button class="row-btn focusable" id="demoAdd" type="button"><span>Demo-Kanäle hinzufügen</span><span class="chev">›</span></button>
@@ -205,6 +217,14 @@
 </div>
 
 <div id="toast" class="off"></div>
+<div id="remind" class="remind off" role="alert"></div>
+
+<!-- ================= Bildschirmschoner ================= -->
+<div id="saver" class="saver hidden" aria-hidden="true">
+  <div class="sv-bg" id="svBg"></div><div class="sv-bg" id="svBg2"></div><div class="sv-shade"></div>
+  <div class="sv-clock" id="svClock"></div>
+  <div class="sv-stage" id="svStage"></div>
+</div>
 
 <!-- ================= Player ================= -->
 <div id="player">
@@ -239,6 +259,7 @@
 <script src="series.js"></script>
 <script src="epg.js"></script>
 <script src="skip.js"></script>
+<script src="sport.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

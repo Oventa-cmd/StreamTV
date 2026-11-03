@@ -19,6 +19,14 @@ IPTV-Player für Fire TV / Android TV im Apple-Stil (WebView-App, Oberfläche li
 - **Intro, Rückblick, Abspann überspringen:** exakte Zeiten aus [TheIntroDB](https://theintrodb.org); fehlt ein Eintrag, lernt die App pro Serie aus dem eigenen Spulverhalten; sonst Faustregel. Im Abspann „Nächste Folge ▶“
 - **Tonspur & Untertitel:** ≡ im Player (HLS); für MKV/MP4 „In anderem Player öffnen“ (z. B. VLC) mit aktueller Position
 
+**Sport**
+- **Reiter „Sport“:** kommende Live-Events – Bundesliga, 2. und 3. Liga, DFB-Pokal, Champions League, WM/EM (OpenLigaDB, TheSportsDB) sowie Formel 1 (Jolpica), MotoGP und DTM; Reihen „Jetzt live“, „Heute“, „Morgen“ …, Chips zum Filtern
+- Detailansicht mit passenden Sendern aus der eigenen Liste (Sendername + EPG), OK startet die Wiedergabe
+- **Vormerken** (≡ oder Button): 5 Min. vor Beginn erscheint ein Hinweis, OK schaltet direkt um
+
+**Bildschirmschoner**
+- Nach 2/5/10 Min. ohne Eingabe (nicht während der Wiedergabe) wechselnde Serien-Plakate in groß mit Uhr; jede Taste beendet ihn
+
 **Empfehlungen & Watchlist**
 - Serien- und Film-Empfehlungen (TMDB), persönlich mit dem Serien-Watchlist-Konto
 - **Watchlist-Sync:** ab 90 % gesehen wird die Folge im Watchlist-Konto eingetragen (Status „watching“, nach der letzten Folge „done“); offline wird nachgetragen

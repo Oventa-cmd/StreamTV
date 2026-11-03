@@ -15,7 +15,7 @@ const RAIL_MAX = 30, ROWS_MAX = 15, GRID_MAX = 300, LIST_MAX = 200;
 const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
   .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
-const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], lite: false };
+const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], lite: false, saver: 5 };
 
 let state = { channels: [], favs: [], recent: [], sources: [], settings: { ...DEFAULT_SETTINGS }, cat: 'Alle', view: 'home' };
 let playerOpen = false, sheetOpen = false, currentId = null, osdTimer = null, lastFocus = null, playerFocus = null, vod = null, editId = null, xtFmt = 'm3u8';
@@ -227,7 +227,9 @@ function epgPatch(id) {
   }
   if (playerOpen && id === currentId) renderOsdEpg();
   if (clistOpen && cl.ids.includes(id)) renderClist();
+  if (sheetOpen && spSheet) { clearTimeout(spEpgT); spEpgT = setTimeout(() => { if (sheetOpen && spSheet) renderSportSheet(); }, 300); }
 }
+let spEpgT = null;
 function renderOsdEpg() {
   const box = $('#pEpg'), n = !vod && currentId ? EPG.now(currentId) : null;
   box.classList.toggle('hidden', !n);
@@ -377,6 +379,7 @@ function renderSettings() {
   const s = state.settings;
   $('#swAuto').classList.toggle('on', !!s.autoRefresh);
   $('#swLite').classList.toggle('on', !!s.lite);
+  $$('#saverSeg [data-saver]').forEach(b => b.classList.toggle('sel', Number(b.dataset.saver) === Number(s.saver)));
   $('#swVpnAuto').classList.toggle('on', !!s.vpnAuto);
   $('#swVpnReq').classList.toggle('on', !!s.vpnReq);
   $('#sourceList').innerHTML = state.sources.length ? state.sources.map(x => `
@@ -422,7 +425,7 @@ function renderAll() { renderHome(); renderSearch(); renderFavs(); renderManage(
 function focusSel(a) {
   const d = a && a.dataset;
   if (!d) return null;
-  for (const k of ['card', 'show', 'cat', 'resume']) if (d[k]) return `[data-${k}="${CSS.escape(d[k])}"]`;
+  for (const k of ['card', 'show', 'cat', 'resume', 'ev', 'spc']) if (d[k]) return `[data-${k}="${CSS.escape(d[k])}"]`;
   return null;
 }
 const visibleOf = sel => [...document.querySelectorAll(sel)].find(e => e.getClientRects().length);
@@ -586,6 +589,7 @@ function closeSheet(fromPop) {
     if (!fromPop) { const j = overlays.lastIndexOf('sheet'); if (j >= 0) overlays.splice(j, 1); skipPops++; history.go(-2); fromPop = true; }
   }
   sheetOpen = false;
+  if (spSheet) { spSheet = null; $('#sheet').classList.remove('sport'); }
   $('#sheet').classList.remove('open');
   if (!fromPop) popOverlay('sheet');
   if (lastFocus && lastFocus.isConnected) lastFocus.focus({ preventScroll: true });
@@ -938,6 +942,247 @@ document.addEventListener('click', e => {
   if (c) catClick(c);
 });
 
+/* ================= Sport ================= */
+const SPV = { cat: 'Alle' };
+const SP_CHIPS = [['Alle', null], ['Fußball', e => SP.COMP[e.comp].sport === 'fb'], ['Motorsport', e => SP.COMP[e.comp].sport === 'ms'],
+  ...Object.keys(SP.COMP).map(k => [SP.COMP[k].name, e => e.comp === k])];
+const dayKey = t => { const d = new Date(t); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
+const hm = t => new Date(t).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+function dayLabel(t) {
+  const today = new Date(), d = new Date(t), diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - new Date(today.getFullYear(), today.getMonth(), today.getDate())) / 864e5);
+  if (diff === 0) return 'Heute';
+  if (diff === 1) return 'Morgen';
+  return d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+function crest(url, name) {
+  return `<span class="ev-crest"><span>${esc(initials(name || '?'))}</span>${url ? `<img src="${esc(url)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</span>`;
+}
+function evTileHTML(e) {
+  const c = SP.COMP[e.comp], live = SP.isLive(e), rem = SP.isRem(e.id);
+  const top = `<span class="ev-comp">${esc(c.short)}${e.round ? ' · ' + esc(e.round.replace(/\.?\s*Spieltag/, '. Sp.')) : ''}</span>
+    ${live ? '<span class="ev-live">LIVE</span>' : ''}${rem ? '<span class="ev-bell" title="Vorgemerkt">🔔</span>' : ''}`;
+  const mid = e.home
+    ? `<div class="ev-teams">${crest(e.homeIcon, e.home)}<span class="ev-mid">${live && e.score ? esc(e.score) : esc(hm(e.start))}</span>${crest(e.awayIcon, e.away)}</div>`
+    : `<div class="ev-ms"><span class="ev-series">${esc(c.short)}</span><b>${esc(e.title)}</b><small>${esc(e.gp)}</small></div><span class="ev-time">${e.weekend ? 'Wochenende' : esc(hm(e.start))}</span>`;
+  return `<div class="tile ev focusable" tabindex="0" data-ev="${esc(e.id)}">
+    <div class="art ev-art" style="--c1:${c.c[0]};--c2:${c.c[1]}">${top}${mid}</div>
+    <div class="caption">${esc(SP.title(e))}</div>
+    <div class="sub">${esc(e.home ? c.name : e.place || c.name)}${live ? ' · läuft' : ''}</div>
+  </div>`;
+}
+function renderSport() {
+  keepFocus(() => {
+    const now = Date.now();
+    const chips = SP_CHIPS.filter(([n, f]) => !f || SP.events.some(f));
+    if (!chips.some(([n]) => n === SPV.cat)) SPV.cat = 'Alle';
+    const filt = (SP_CHIPS.find(([n]) => n === SPV.cat) || [])[1];
+    const list = SP.events.filter(e => e.end > now && (!filt || filt(e)));
+    $('#spChips').innerHTML = chips.map(([n]) => `<button class="chip focusable ${SPV.cat === n ? 'active' : ''}" data-spc="${esc(n)}">${esc(n)}</button>`).join('');
+    $('#spInfo').textContent = SP.loading && !SP.events.length ? '' : list.length ? list.length + ' Events' : '';
+    let html = '';
+    const remd = Object.values(SP.rems()).map(x => x.ev).filter(e => e.end > now && (!filt || filt(e))).sort((a, b) => a.start - b.start);
+    if (remd.length) html += railHTML('🔔 Vorgemerkt', remd.map(evTileHTML).join(''), remd.length);
+    const live = list.filter(e => SP.isLive(e, now));
+    if (live.length) html += railHTML('Jetzt live', live.map(evTileHTML).join(''), live.length);
+    const days = new Map();
+    for (const e of list) { if (SP.isLive(e, now) || e.weekend && e.start < now) continue; const k = dayKey(e.start); if (!days.has(k)) days.set(k, []); days.get(k).push(e); }
+    let n = 0;
+    for (const [, evs] of days) { if (n++ >= 10) break; html += railHTML(dayLabel(evs[0].start), evs.slice(0, 40).map(evTileHTML).join(''), evs.length); }
+    if (!html) html = SP.loading ? railHTML('Lade Spielpläne …', skeletons(4))
+      : `<p class="empty">${SP.errors.length >= 8 ? 'Sportdaten gerade nicht erreichbar. Internetverbindung prüfen.' : 'Keine Events in den nächsten 14 Tagen.'}</p>`;
+    $('#spRows').innerHTML = html;
+    $('#spFoot').innerHTML = (SP.errors.length ? `Nicht erreichbar: ${esc(SP.errors.join(', '))} · <button class="mini focusable" id="spRetry">Erneut laden</button><br>` : '')
+      + 'Daten: OpenLigaDB, Jolpica-F1, MotoGP, TheSportsDB · Sender sind Vorschläge aus deiner Senderliste. ≡ auf einem Event = vormerken.';
+  });
+}
+let spSheet = null;
+function openSportSheet(id) {
+  const e = SP.byId(id);
+  if (!e) return;
+  if (!sheetOpen) { lastFocus = document.activeElement; sheetOpen = true; pushOverlay('sheet'); $('#sheet').classList.add('open'); sheetAnim(); }
+  spSheet = e;
+  $('#sheet').classList.add('sport');
+  const c = SP.COMP[e.comp];
+  $('#sheetBd').style.backgroundImage = `radial-gradient(ellipse at 75% 35%, ${c.c[0]}, ${c.c[1]} 60%, #000)`;
+  SP.channelsFor(e, 12).forEach(x => EPG.want(x.ch, true));
+  renderSportSheet(true);
+}
+function renderSportSheet(first) {
+  const e = spSheet;
+  if (!e) return;
+  const c = SP.COMP[e.comp], live = SP.isLive(e), rem = SP.isRem(e.id), now = Date.now();
+  const mins = Math.round((e.start - now) / 60000);
+  const rel = live ? 'Läuft gerade' : mins < 60 ? `in ${mins} Min.` : mins < 1440 ? `in ${Math.round(mins / 60)} Std.` : '';
+  const when = e.weekend ? dayLabel(e.start) + ' (Rennwochenende)' : `${dayLabel(e.start)} · ${hm(e.start)} Uhr`;
+  const chans = SP.channelsFor(e, 8);
+  const keep = document.activeElement && document.activeElement.id;
+  const keepCard = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.card;
+  const head = e.home
+    ? `<div class="sp-match">${crest(e.homeIcon, e.home)}<div class="sp-vs">${live && e.score ? esc(e.score) : 'vs'}</div>${crest(e.awayIcon, e.away)}</div><h1>${esc(e.homeFull || e.home)} – ${esc(e.awayFull || e.away)}</h1>`
+    : `<div class="sp-series">${esc(c.short)}</div><h1>${esc(e.title)} · ${esc(e.gp)}</h1>`;
+  $('#sheetInner').innerHTML = `
+    <div class="ip-head">
+      <div class="eyebrow">${esc(c.name)}${e.round ? ' · ' + esc(e.round) : ''}${live ? ' · <span class="ev-live">LIVE</span>' : ''}</div>
+      ${head}
+      <div class="meta">${esc(when)}${rel ? ' · ' + esc(rel) : ''}${e.place && e.home ? ' · ' + esc(e.place) : ''}</div>
+      <div class="btn-row">
+        <button class="btn primary focusable" id="spRem" data-id="${esc(e.id)}">${rem ? '✓ Vorgemerkt' : '🔔 Vormerken'}</button>
+        <button class="btn focusable" id="spSearch" data-livesearch="${esc(e.home || c.name)}">Im Live-TV suchen</button>
+        <button class="btn focusable" id="spClose">Schließen</button>
+      </div>
+    </div>
+    <div class="ip-body">
+      <div class="group-title">Passende Sender</div>
+      ${chans.length ? `<div class="group ip-list">${chans.map(x => `
+        <button class="row-btn sp-ch focusable" data-card="${esc(x.ch.id)}">
+          <span class="cl-logo"><span>${esc(initials(cleanName(x.ch.name)))}</span>${x.ch.logo ? `<img src="${esc(x.ch.logo)}" alt="" onerror="this.remove()">` : ''}</span>
+          <span class="lbl"><b>${esc(x.ch.name)}</b><small>${esc(x.prog || x.ch.group)}</small></span>
+          ${x.epg ? '<span class="ip-resume">Laut EPG ▶</span>' : '<span class="chev">▶</span>'}
+        </button>`).join('')}</div>`
+      : `<p class="group-foot">Keine passenden Sender gefunden – über „Im Live-TV suchen“ selbst suchen.</p>`}
+      <p class="group-foot">Vorschläge nach Sendernamen und Programm (EPG). Welcher Sender überträgt, kann je nach Spiel abweichen.</p>
+    </div>`;
+  const t = (keep && $('#' + keep)) || (keepCard && $(`#sheet [data-card="${CSS.escape(keepCard)}"]`)) || (first && $('#spRem'));
+  if (t) t.focus({ preventScroll: true });
+}
+function toggleRemind(id) {
+  const e = SP.byId(id);
+  if (!e) return;
+  const on = SP.toggleRem(e);
+  toast(on ? `🔔 Vorgemerkt – Hinweis 5 Min. vor Beginn` : 'Nicht mehr vorgemerkt');
+  if (state.view === 'sport') renderSport();
+  if (sheetOpen && spSheet) renderSportSheet();
+}
+/* ---------- Erinnerung ---------- */
+let remEv = null, remT = null;
+function checkReminders() {
+  const due = SP.due();
+  if (due.length && !remEv) showReminder(due[0]);
+}
+function showReminder(e) {
+  remEv = e;
+  const c = SP.COMP[e.comp], mins = Math.max(0, Math.round((e.start - Date.now()) / 60000));
+  const best = SP.channelsFor(e, 1)[0];
+  $('#remind').innerHTML = `<div class="rm-ico" style="--c1:${c.c[0]};--c2:${c.c[1]}">${esc(c.short)}</div>
+    <div class="rm-txt"><b>${mins ? `In ${mins} Min.` : 'Jetzt'}: ${esc(SP.title(e))}</b>
+    <small>${esc(c.name)}${best ? ' · ' + esc(cleanName(best.ch.name)) : ''}</small></div>
+    <div class="rm-keys"><span>OK</span> ${best ? 'Umschalten' : 'Anzeigen'} · <span>Zurück</span> Schließen</div>`;
+  $('#remind').classList.remove('off');
+  if (saverOpen) closeSaver();
+  pushOverlay('remind');
+  clearTimeout(remT);
+  remT = setTimeout(() => hideReminder(), 25000);
+}
+function hideReminder(fromPop) {
+  if (!remEv) return;
+  remEv = null;
+  clearTimeout(remT);
+  $('#remind').classList.add('off');
+  if (fromPop) return;
+  if (overlays[overlays.length - 1] === 'remind') popOverlay('remind');
+  else { const i = overlays.lastIndexOf('remind'); if (i >= 0) overlays.splice(i, 1); }
+}
+/** Erst ausführen, wenn alle angestoßenen history.back() verarbeitet sind (sonst überholen sich Zurück und neuer Eintrag). */
+function afterPops(fn, n = 0) {
+  if (skipPops <= 0 || n > 50) return fn();
+  setTimeout(() => afterPops(fn, n + 1), 20);
+}
+function actReminder() {
+  const e = remEv;
+  hideReminder();
+  if (!e) return;
+  const best = SP.channelsFor(e, 1)[0];
+  if (best) {
+    if (sheetOpen && !playerOpen) closeSheet();
+    afterPops(() => openPlayer(best.ch.id));
+    return;
+  }
+  if (playerOpen) closePlayer();
+  afterPops(() => { show('sport'); openSportSheet(e.id); });
+}
+
+/* ================= Bildschirmschoner ================= */
+let saverOpen = false, saverT = null, saverItems = [], saverIdx = 0, saverLayer = 0, lastInput = Date.now();
+function saverPool() {
+  const seen = new Set(), out = [];
+  for (const id in TM.cache) for (const p of TM.cache[id].items || []) {
+    const k = p.type + ':' + p.id;
+    if (p.poster && p.backdrop && !seen.has(k)) { seen.add(k); out.push({ title: p.title, poster: TM.IMG + 'w780' + p.poster, bg: TM.IMG + 'w1280' + p.backdrop, info: TM.info(p), ov: p.overview, key: k, type: p.type, id: p.id }); }
+  }
+  if (!out.length && SER.items) for (const x of SER.items) { if (x.it.cover && out.length < 60) out.push({ title: cleanName(x.it.name), poster: x.it.cover, bg: x.it.cover, info: [x.it.year, x.it.cat].filter(Boolean).join(' · '), ov: '' }); }
+  for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+  return out;
+}
+function openSaver() {
+  if (saverOpen) return;
+  saverItems = saverPool(); saverIdx = 0;
+  saverFocus = document.activeElement;
+  saverOpen = true;
+  pushOverlay('saver');
+  $('#saver').classList.remove('hidden');
+  if (document.activeElement) document.activeElement.blur();
+  saverTick(); saverShow();
+  clearInterval(saverT);
+  saverT = setInterval(() => { saverTick(); if (saverItems.length > 1 && Date.now() - saverShownAt > 12000) { saverIdx = (saverIdx + 1) % saverItems.length; saverShow(); } }, 1000);
+}
+let saverShownAt = 0, saverFocus = null;
+function saverTick() {
+  const d = new Date();
+  $('#svClock').innerHTML = `<b>${d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</b><span>${d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</span>`;
+}
+function saverShow() {
+  saverShownAt = Date.now();
+  const it = saverItems[saverIdx], st = $('#svStage');
+  if (!it) { st.innerHTML = '<div class="sv-empty">StreamTV</div>'; return; }
+  const d = it.key && TM.details_[it.key], logo = d && TM.pickLogo(d);
+  if (it.key && !d) TM.details(it.type, it.id).catch(() => {});
+  const img = new Image();
+  img.onload = () => {
+    if (!saverOpen || saverItems[saverIdx] !== it) return;
+    saverLayer = 1 - saverLayer;
+    const on = saverLayer ? $('#svBg2') : $('#svBg'), off = saverLayer ? $('#svBg') : $('#svBg2');
+    on.style.backgroundImage = `url("${it.bg.replace(/"/g, '%22')}")`;
+    on.classList.remove('show'); void on.offsetWidth; on.classList.add('show'); off.classList.remove('show');
+    st.classList.remove('in'); void st.offsetWidth;
+    st.innerHTML = `<div class="sv-poster"><img src="${esc(it.poster)}" alt=""></div>
+      <div class="sv-info">${logo ? `<img class="sv-logo" src="${TM.IMG}w500${logo}" alt="">` : `<h1>${esc(it.title)}</h1>`}
+        <div class="meta">${esc(it.info || '')}</div>${it.ov ? `<p>${esc(it.ov)}</p>` : ''}</div>`;
+    st.classList.add('in');
+  };
+  img.onerror = () => { if (saverItems.length > 1) { saverItems.splice(saverIdx, 1); saverIdx %= saverItems.length; saverShow(); } };
+  img.src = it.bg;
+}
+function closeSaver(fromPop) {
+  if (!saverOpen) return;
+  saverOpen = false;
+  clearInterval(saverT);
+  $('#saver').classList.add('hidden');
+  $('#svStage').innerHTML = '';
+  lastInput = Date.now();
+  if (!fromPop) popOverlay('saver');
+  // Fokus zurück, wo er war
+  const t = saverFocus && saverFocus.isConnected ? saverFocus : null;
+  if (t && !playerOpen) t.focus({ preventScroll: true });
+}
+// jede Eingabe: Bildschirmschoner schließen (Taste wird verschluckt) bzw. Zeit zurücksetzen
+document.addEventListener('keydown', e => {
+  lastInput = Date.now();
+  if (saverOpen) { e.preventDefault(); e.stopImmediatePropagation(); closeSaver(); return; }
+  if (remEv) {
+    if (['Enter', ' '].includes(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); actReminder(); }
+    else if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); hideReminder(); }
+  }
+}, true);
+['click', 'mousemove', 'wheel', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { lastInput = Date.now(); if (saverOpen && ev !== 'mousemove') closeSaver(); }, true));
+$('#saver').addEventListener('click', () => closeSaver());
+$('#remind').addEventListener('click', () => actReminder());
+setInterval(() => {
+  const m = Number(state.settings.saver) || 0;
+  if (!m || saverOpen || remEv || document.hidden) return;
+  if (playerOpen && !video.paused) { lastInput = Date.now(); return; }
+  if (Date.now() - lastInput > m * 60000) openSaver();
+}, 5000);
+
 /* ================= Overlays & Zurück-Taste ================= */
 const overlays = [];
 let skipPops = 0;
@@ -950,7 +1195,9 @@ function popOverlay(name) {
 window.addEventListener('popstate', () => {
   if (skipPops > 0) { skipPops--; return; }
   const top = overlays.pop();
-  if (top === 'pmenu') closeMenu(true);
+  if (top === 'saver') closeSaver(true);
+  else if (top === 'remind') hideReminder(true);
+  else if (top === 'pmenu') closeMenu(true);
   else if (top === 'clist') closeClist(true);
   else if (top === 'player') closePlayer(true);
   else if (top === 'iptv') closeIptv(true);
@@ -967,6 +1214,7 @@ function handleBack() {
 function show(view) {
   state.view = view;
   if (view === 'series') loadSeriesCatalog(false);
+  if (view === 'sport') { renderSport(); SP.refresh(false); }
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   window.scrollTo(0, 0);
@@ -1683,6 +1931,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && a && a.classList.contains('tile')) { e.preventDefault(); a.click(); return; }
   if ((e.key === 'f' || e.key === 'ContextMenu') && a && a.dataset.card) { e.preventDefault(); toggleFav(a.dataset.card); }
   if (e.key === 'ContextMenu' && a && a.dataset.resume) { e.preventDefault(); hideResume(a.dataset.resume); }
+  if (e.key === 'ContextMenu' && a && a.dataset.ev) { e.preventDefault(); toggleRemind(a.dataset.ev); }
 });
 
 /* ================= Klicks ================= */
@@ -1719,6 +1968,13 @@ document.addEventListener('click', e => {
   }
   const card = t.closest('[data-card]');
   if (card) { openPlayer(card.dataset.card); return; }
+  const evt = t.closest('[data-ev]');
+  if (evt) { openSportSheet(evt.dataset.ev); return; }
+  const spc = t.closest('[data-spc]');
+  if (spc) { SPV.cat = spc.dataset.spc; renderSport(); const c = visibleOf(`[data-spc="${CSS.escape(SPV.cat)}"]`); if (c) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest', inline: 'center' }); } return; }
+  if (t.closest('#spRem')) { const id = $('#spRem').dataset.id; toggleRemind(id); return; }
+  if (t.closest('#spClose')) { closeSheet(); return; }
+  if (t.closest('#spRetry')) { SP.refresh(true); return; }
   const rs = t.closest('[data-resume]');
   if (rs) { playResume(rs.dataset.resume); return; }
   const sc = t.closest('[data-scat]');
@@ -1824,6 +2080,8 @@ $('#xtAdd').addEventListener('click', async e => {
 function toggleSetting(key) { state.settings[key] = !state.settings[key]; persist(); renderSettings(); }
 $('#swAuto').addEventListener('click', () => toggleSetting('autoRefresh'));
 $('#swLite').addEventListener('click', () => { toggleSetting('lite'); applyLite(); });
+$$('#saverSeg [data-saver]').forEach(b => b.addEventListener('click', () => { state.settings.saver = Number(b.dataset.saver); persist(); renderSettings(); b.focus({ preventScroll: true }); }));
+$('#saverNow').addEventListener('click', () => openSaver());
 $('#swVpnAuto').addEventListener('click', () => toggleSetting('vpnAuto'));
 $('#swVpnReq').addEventListener('click', () => toggleSetting('vpnReq'));
 $('#vpnOpen').addEventListener('click', () => {
@@ -1958,6 +2216,8 @@ function tick() { $('#clock').textContent = new Date().toLocaleTimeString('de-DE
 /* ================= Start ================= */
 load();
 applyLite();
+SP.load();
+SP.onUpdate(() => { if (state.view === 'sport') renderSport(); if (sheetOpen && spSheet) renderSportSheet(); });
 EPG.load();
 EPG.onUpdate(epgPatch);
 document.addEventListener('scroll', () => { EPG.scan(); if (state.view === 'series') seriesMore(); }, true);
@@ -1977,6 +2237,9 @@ setInterval(renderVpn, 15000);
 try { if (bridge) $('#appVersion').textContent = 'Version ' + bridge.appVersion(); } catch (e) {}
 vpnOnStart();
 setTimeout(() => checkUpdate(false), 5000);   // Start nicht blockieren
+setTimeout(() => SP.refresh(false), 8000);    // Sportdaten im Hintergrund (für Erinnerungen)
+setInterval(checkReminders, 15000);
+setTimeout(checkReminders, 3000);
 setupHero();
 loadDiscover(false);
 if (state.settings.autoRefresh) {
