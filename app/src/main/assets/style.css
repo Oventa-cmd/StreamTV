@@ -347,3 +347,12 @@ video::cue{background:rgba(0,0,0,.65);font-family:Inter,sans-serif;font-size:1.0
 .upd-cmd small{white-space:normal!important}
 .tabbar button.badge{position:relative}
 .tabbar button.badge::after{content:"";position:absolute;top:.3rem;right:.35rem;width:.45rem;height:.45rem;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red)}
+
+/* ---------- Kategorien ausblenden ---------- */
+.cat-actions{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-top:1.2rem}
+.cat-actions .hint{margin:0 0 0 .4rem}
+#view-cats .switch .lbl{min-width:0}
+#view-cats .switch .lbl b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* deutlicherer Fokus in Listen (Fernbedienung) */
+.switch:focus,.row-btn:focus{background:rgba(255,255,255,.16);box-shadow:inset 4px 0 0 var(--accent)}

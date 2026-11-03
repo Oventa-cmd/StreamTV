@@ -15,7 +15,7 @@ const RAIL_MAX = 30, ROWS_MAX = 15, GRID_MAX = 300, LIST_MAX = 200;
 const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
   .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
-const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '' };
+const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [] };
 
 let state = { channels: [], favs: [], recent: [], sources: [], settings: { ...DEFAULT_SETTINGS }, cat: 'Alle', view: 'home' };
 let playerOpen = false, sheetOpen = false, currentId = null, osdTimer = null, lastFocus = null, playerFocus = null, vod = null, editId = null, xtFmt = 'm3u8';
@@ -68,7 +68,14 @@ const byId = id => state.channels.find(c => c.id === id);
 const isFav = id => state.favs.includes(id);
 const favList = () => state.favs.map(byId).filter(Boolean);
 const recentList = () => state.recent.map(byId).filter(Boolean);
-function groups(list = state.channels) {
+/** Sender ohne ausgeblendete Kategorien. */
+function visibleChannels() {
+  const h = state.settings.hideLive || [];
+  if (!h.length) return state.channels;
+  const H = new Set(h);
+  return state.channels.filter(c => !H.has(c.group));
+}
+function groups(list = visibleChannels()) {
   const m = new Map();
   for (const c of list) { if (!m.has(c.group)) m.set(c.group, []); m.get(c.group).push(c); }
   return m;
@@ -279,7 +286,8 @@ function renderHome() {
   const g = groups();
   if (state.cat !== 'Alle' && !g.has(state.cat)) state.cat = 'Alle';
   renderChips();
-  $('#liveCount').textContent = state.channels.length ? state.channels.length + ' Sender' : '';
+  const vis = visibleChannels().length;
+  $('#liveCount').textContent = state.channels.length ? vis + ' Sender' + (vis !== state.channels.length ? ` (${state.channels.length - vis} ausgeblendet)` : '') : '';
   $('#homeTop').innerHTML = continueRail() + channelRail('Meine Favoriten', favList()) + channelRail('Zuletzt gesehen', recentList());
 
   let rows = '';
@@ -320,7 +328,7 @@ function renderDiscover() {
 }
 function renderSearch() {
   const q = $('#q').value.trim().toLowerCase();
-  const res = q ? state.channels.filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q)) : [];
+  const res = q ? visibleChannels().filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q)) : [];
   $('#searchInfo').textContent = q ? `${res.length} Sender` + (res.length > GRID_MAX ? ` – die ersten ${GRID_MAX} werden angezeigt` : '') : '';
   $('#searchGrid').innerHTML = !q ? `<p class="empty">Sender, Kategorie, Serie oder Film eingeben.</p>`
     : res.length ? res.slice(0, GRID_MAX).map(tileHTML).join('') : '';
@@ -386,6 +394,8 @@ function renderSettings() {
   renderWlGroup();
   renderVpn();
   renderUpdate();
+  const nl = (s.hideLive || []).length, ns = (s.hideSeries || []).length;
+  $('#catOpenSub').textContent = nl || ns ? `Live-TV: ${nl} · Serien: ${ns} ausgeblendet` : 'Alle Kategorien sichtbar';
 }
 function renderWlGroup() {
   const own = (state.settings.tmdbKey || '').trim();
@@ -773,16 +783,21 @@ function renderSeriesView(reset) {
   if (SER.status !== 'ready') return;
   if (!reset && body.querySelector('.grid')) return;
   const q = XS.norm($('#serQ').value.trim());
-  const all = SER.items;
+  const all = SER.items, HS = new Set(state.settings.hideSeries || []);
+  if (HS.has(SER.cat)) SER.cat = 'Alle';
   SER.list = [];
+  let visAll = 0;
   for (let i = 0; i < all.length; i++) {
     const it = all[i].it;
+    if (HS.size && HS.has(it.cat)) continue;
+    visAll++;
     if (SER.cat !== 'Alle' && it.cat !== SER.cat) continue;
     if (q && !it.n.includes(q)) continue;
     SER.list.push(i);
   }
-  $('#serCount').textContent = SER.list.length.toLocaleString('de-DE') + (SER.list.length !== all.length ? ' von ' + all.length.toLocaleString('de-DE') : '');
-  $('#serChips').innerHTML = ['Alle', ...SER.cats].map(n => `<button class="chip focusable ${SER.cat === n ? 'active' : ''}" data-scat="${esc(n)}">${esc(n)}</button>`).join('');
+  $('#serCount').textContent = SER.list.length.toLocaleString('de-DE') + (SER.list.length !== visAll ? ' von ' + visAll.toLocaleString('de-DE') : '')
+    + (visAll !== all.length ? ` · ${(all.length - visAll).toLocaleString('de-DE')} ausgeblendet` : '');
+  $('#serChips').innerHTML = ['Alle', ...SER.cats.filter(n => !HS.has(n))].map(n => `<button class="chip focusable ${SER.cat === n ? 'active' : ''}" data-scat="${esc(n)}">${esc(n)}</button>`).join('');
   SER.shown = 0;
   body.innerHTML = SER.list.length ? '<div class="grid posters" id="serGrid"></div>' : `<p class="empty">Keine Serien gefunden.</p>`;
   seriesMore(true);
@@ -816,6 +831,88 @@ function openCatalogSeries(i) {
   selectHit(0);
 }
 
+/* ================= Kategorien ausblenden ================= */
+let catKind = 'live';
+/** Sprach-/Länder-Präfix eines Kategorienamens, z. B. „DE | Sport“, „|AR| News“, „[TR] Film“, „UK: Sky“. */
+function catPrefix(n) {
+  const m = String(n || '').match(/^\s*[\[|(]?\s*([A-Za-zÄÖÜ]{2,4})\s*[\]|):\-–]/);
+  return m ? m[1].toUpperCase() : null;
+}
+function catNames(kind) {
+  if (kind === 'live') return [...groups(state.channels).keys()];
+  return SER.status === 'ready' ? SER.cats.slice() : null;
+}
+const hideKey = kind => kind === 'live' ? 'hideLive' : 'hideSeries';
+function openCats() {
+  show('cats');
+  setCatKind(catKind, true);
+}
+function closeCats() {
+  show('settings');
+  const b = $('#catOpen');
+  if (b) { b.focus({ preventScroll: true }); b.scrollIntoView({ block: 'center' }); }
+}
+function setCatKind(k, focusSeg) {
+  catKind = k;
+  $$('#catSeg [data-ckind]').forEach(b => b.classList.toggle('sel', b.dataset.ckind === k));
+  if (k === 'series' && SER.status !== 'ready') loadSeriesCatalog(false).then(() => { if (state.view === 'cats' && catKind === 'series') renderCats(); });
+  renderCats();
+  if (focusSeg) { const b = $(`#catSeg [data-ckind="${k}"]`); if (b) b.focus({ preventScroll: true }); }
+}
+function renderCats() {
+  const names = catNames(catKind), body = $('#catBody');
+  const keep = focusSel(document.activeElement) || (document.activeElement && document.activeElement.dataset && ['hcat', 'hpre', 'hall'].map(k => document.activeElement.dataset[k] != null ? `[data-${k}="${CSS.escape(document.activeElement.dataset[k])}"]` : null).find(Boolean));
+  if (!names) {
+    body.innerHTML = `<p class="group-foot" style="margin-top:1rem">${SER.status === 'error' ? esc(SER.msg) : SER.status === 'none' ? 'Keine Xtream-Quelle eingerichtet.' : 'Lade Serienkategorien …'}</p>`;
+    return;
+  }
+  if (!names.length) { body.innerHTML = `<p class="group-foot" style="margin-top:1rem">Keine Kategorien vorhanden.</p>`; return; }
+  const H = new Set(state.settings[hideKey(catKind)] || []);
+  const pre = new Map();
+  for (const n of names) { const p = catPrefix(n); if (p) pre.set(p, (pre.get(p) || []).concat([n])); }
+  const preList = [...pre].filter(([, l]) => l.length >= 2).sort((a, b) => b[1].length - a[1].length);
+  const sw = (attr, val, on, title, sub) => `<button class="switch focusable ${on ? 'on' : ''}" type="button" data-${attr}="${esc(val)}"><span class="lbl"><b>${esc(title)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span><span class="knob"></span></button>`;
+  let html = `<div class="cat-actions"><button class="mini focusable" data-hall="show">Alle einblenden</button><button class="mini focusable" data-hall="hide">Alle ausblenden</button>
+    <span class="hint">${names.length - [...H].filter(n => names.includes(n)).length} von ${names.length} sichtbar</span></div>`;
+  if (preList.length >= 2) {
+    html += `<div class="group-title">Nach Sprache / Land</div><div class="group">${preList.map(([p, l]) => {
+      const vis = l.filter(n => !H.has(n)).length;
+      return sw('hpre', p, vis > 0, p, `${l.length} Kategorien${vis && vis < l.length ? ` · ${vis} sichtbar` : vis ? '' : ' · ausgeblendet'}`);
+    }).join('')}</div>`;
+  }
+  html += `<div class="group-title">Einzelne Kategorien</div><div class="group">${names.map(n => sw('hcat', n, !H.has(n), n, '')).join('')}</div>`;
+  body.innerHTML = html;
+  if (keep) { const el = visibleOf(keep); if (el) el.focus({ preventScroll: true }); }
+}
+function setHidden(kind, list) {
+  state.settings[hideKey(kind)] = [...new Set(list)];
+  persist();
+  if (kind === 'live') { state.cat = groups().has(state.cat) ? state.cat : 'Alle'; keepFocus(() => { renderHome(); renderSearch(); }); }
+  else if (SER.status === 'ready') renderSeriesView(true);
+  renderSettings();
+  renderCats();
+}
+function catClick(el) {
+  const names = catNames(catKind) || [], H = new Set(state.settings[hideKey(catKind)] || []);
+  if (el.dataset.hall) return setHidden(catKind, el.dataset.hall === 'hide' ? names : []);
+  if (el.dataset.hcat != null) { const n = el.dataset.hcat; H.has(n) ? H.delete(n) : H.add(n); return setHidden(catKind, [...H]); }
+  if (el.dataset.hpre) {
+    const l = names.filter(n => catPrefix(n) === el.dataset.hpre);
+    const anyVis = l.some(n => !H.has(n));
+    l.forEach(n => anyVis ? H.add(n) : H.delete(n));
+    setHidden(catKind, [...H]);
+    toast(`${el.dataset.hpre}: ${l.length} Kategorien ${anyVis ? 'ausgeblendet' : 'eingeblendet'}`);
+  }
+}
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('#catOpen')) return openCats();
+  const k = t.closest('[data-ckind]');
+  if (k) return setCatKind(k.dataset.ckind, true);
+  const c = t.closest('#catBody [data-hcat], #catBody [data-hpre], #catBody [data-hall]');
+  if (c) catClick(c);
+});
+
 /* ================= Overlays & Zurück-Taste ================= */
 const overlays = [];
 let skipPops = 0;
@@ -836,6 +933,7 @@ window.addEventListener('popstate', () => {
 });
 // Wird von der App aufgerufen, wenn kein Overlay offen ist: erst zur Startseite, dann beenden
 function handleBack() {
+  if (state.view === 'cats') { closeCats(); return true; }
   if (state.view !== 'home') { show('home'); return true; }
   return false;
 }
@@ -1213,7 +1311,7 @@ function zap(step) {
     if (i < 0 || i >= vod.list.length) { toast(step > 0 ? 'Letzte Folge' : 'Erste Folge'); return; }
     return openVod(vod.list, i, vod.show, vod.ctx);
   }
-  const list = state.channels;
+  const list = visibleChannels();
   if (!list.length) return;
   const i = list.findIndex(c => c.id === currentId);
   openPlayer(list[(i + step + list.length) % list.length].id);
@@ -1250,7 +1348,7 @@ function openClist() {
   const ch = byId(currentId);
   if (!ch || clistOpen) return;
   cl.group = ch.group;
-  cl.ids = state.channels.filter(c => c.group === ch.group).map(c => c.id);
+  cl.ids = state.channels.filter(c => c.group === ch.group).map(c => c.id);   // aktuelle Kategorie, auch wenn ausgeblendet
   cl.sel = Math.max(0, cl.ids.indexOf(currentId));
   clistOpen = true;
   pushOverlay('clist');
@@ -1485,6 +1583,7 @@ document.addEventListener('keydown', e => {
   const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA');
   if (sheetOpen && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); ip ? closeIptv() : closeSheet(); return; }
   if (typing && !['ArrowUp', 'ArrowDown', 'Escape'].includes(e.key)) return;
+  if (state.view === 'cats' && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); closeCats(); return; }
   if (NAV_KEYS.includes(e.key)) { e.preventDefault(); navigate(e.key); return; }
   if (e.key === 'Enter' && a && a.classList.contains('tile')) { e.preventDefault(); a.click(); return; }
   if ((e.key === 'f' || e.key === 'ContextMenu') && a && a.dataset.card) { e.preventDefault(); toggleFav(a.dataset.card); }
