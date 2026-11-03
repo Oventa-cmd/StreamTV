@@ -42,6 +42,8 @@ header{
 .tabbar{display:flex;gap:.2rem;padding:.3rem;border-radius:999px;background:var(--glass);border:1px solid var(--line)}
 .tabbar button{padding:.45rem 1rem;border-radius:999px;color:var(--mut);font-weight:600;font-size:.92rem;transition:all .25s var(--ease)}
 .tabbar button.active{color:var(--txt);background:var(--glass2)}
+.tabbar button.icon{display:inline-flex;align-items:center;justify-content:center;padding:.45rem .75rem}
+.tabbar button.icon svg{width:1.1rem;height:1.1rem;display:block}
 .tabbar button:focus{background:#fff;color:#000;transform:scale(1.06);box-shadow:0 6px 20px rgba(0,0,0,.4)}
 .status{display:flex;justify-content:flex-end;align-items:center;gap:.7rem;color:var(--mut);font-weight:600;font-size:.95rem}
 .pill{display:inline-flex;align-items:center;gap:.35rem;padding:.3rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:var(--glass);border:1px solid var(--line)}
@@ -597,3 +599,10 @@ html.nv #video{visibility:hidden}
 .nv-cue{position:absolute;left:8%;right:8%;bottom:9%;text-align:center;pointer-events:none;z-index:2;font-size:1.55rem;line-height:1.35;transition:bottom .25s}
 .nv-cue span{background:rgba(0,0,0,.66);color:#fff;padding:.08em .4em;border-radius:.2em;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 #osd:not(.hide)~.nv-cue,#player:has(#osd:not(.hide)) .nv-cue{bottom:24%}
+
+/* ---------- Reiter-Aufteilung (v27) ---------- */
+.rail .tile.poster{width:8.6rem}
+@media (min-width:1600px){.rail .tile.poster{width:10rem}}
+.tile.show.more .art{display:grid;place-items:center;background:var(--glass);border:1px dashed rgba(255,255,255,.2)}
+.tile.show.more .art span{font-weight:700;color:var(--txt)}
+.cat-label{margin-top:2.2rem}

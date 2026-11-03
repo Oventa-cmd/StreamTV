@@ -211,7 +211,7 @@ const TM = {
   pick(o, type) {
     if (type !== 'tv' && type !== 'movie') return null;
     return {
-      type, id: o.id, title: this.nameOf(o),
+      type, id: o.id, title: this.nameOf(o), orig: o.original_name || o.original_title || '',
       backdrop: o.backdrop_path || null, poster: o.poster_path || null,
       overview: o.overview || '',
       year: String(o.first_air_date || o.release_date || '').slice(0, 4),
@@ -236,11 +236,11 @@ const TM = {
       { id: 'new', label: 'Neu bei Netflix & Prime' },
       { id: 'best', label: 'Bestbewertete Serien' },
       { id: 'hidden', label: 'Geheimtipps' },
-      movieSeeds ? { id: 'mForYou', label: 'Filme für dich' } : null,
-      { id: 'mTop', label: 'Top 10 Filme diese Woche', rank: true },
-      { id: 'mNew', label: 'Neue Filme bei Netflix & Prime' },
-      { id: 'mBest', label: 'Bestbewertete Filme' }
-    ].filter(Boolean);
+      movieSeeds ? { id: 'mForYou', label: 'Filme für dich', type: 'movie' } : null,
+      { id: 'mTop', label: 'Top 10 Filme diese Woche', rank: true, type: 'movie' },
+      { id: 'mNew', label: 'Neue Filme bei Netflix & Prime', type: 'movie' },
+      { id: 'mBest', label: 'Bestbewertete Filme', type: 'movie' }
+    ].filter(Boolean).map(t => Object.assign({ type: 'tv' }, t));
   },
   seedSig() { return WL.seeds().map(s => `${s.type}:${s.id}:${s.weight}`).join('|'); },
 

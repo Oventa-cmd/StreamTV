@@ -15,7 +15,7 @@ const RAIL_MAX = 30, ROWS_MAX = 15, GRID_MAX = 300, LIST_MAX = 200;
 const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
   .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
-const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], lite: false, saver: 5, nativeVod: true };
+const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], hideVod: [], lite: false, saver: 5, nativeVod: true };
 
 let state = { channels: [], favs: [], recent: [], sources: [], settings: { ...DEFAULT_SETTINGS }, cat: 'Alle', view: 'home' };
 let playerOpen = false, sheetOpen = false, currentId = null, osdTimer = null, lastFocus = null, playerFocus = null, vod = null, editId = null, xtFmt = 'm3u8';
@@ -181,7 +181,7 @@ async function refreshSource(src, quiet) {
     state.channels = state.channels.filter(c => c.src !== src.id && c.src !== 'demo').concat(list);
     pruneRefs();
     Object.assign(src, { count: list.length, updated: Date.now(), error: '' });
-    SER.items = null; SER.status = 'idle';
+    resetCatalogs(); setTimeout(bgCatalogs, 500);
     if (!quiet) toast(`${src.name}: ${list.length} Kanäle geladen`);
     return true;
   } catch (e) {
@@ -201,7 +201,7 @@ function removeSource(id) {
   if (!s || !confirm(`Quelle „${s.name}“ mit allen Kanälen entfernen?`)) return;
   state.sources = state.sources.filter(x => x.id !== id);
   state.channels = state.channels.filter(c => c.src !== id);
-  SER.items = null; SER.status = 'idle';
+  resetCatalogs(); setTimeout(bgCatalogs, 500);
   pruneRefs(); refresh();
 }
 
@@ -280,67 +280,121 @@ function channelRail(title, list, catKey) {
 }
 
 /* ================= Rendering: Ansichten ================= */
-function renderChips() {
-  const names = ['Alle', ...groups().keys()];
-  $('#chips').innerHTML = names.map(n => `<button class="chip focusable ${state.cat === n ? 'active' : ''}" data-cat="${esc(n)}">${esc(n)}</button>`).join('');
-}
+const FAV_CAT = 'Favoriten';
+/** Start: nur Ausschnitte – Weiterschauen, Lieblingssender, Zuletzt gesehen, ein paar Empfehlungen. */
 function renderHome() {
-  const g = groups();
-  if (state.cat !== 'Alle' && !g.has(state.cat)) state.cat = 'Alle';
-  renderChips();
+  $('#homeTop').innerHTML = continueRail() + channelRail('Lieblingssender', favList(), FAV_CAT) + channelRail('Zuletzt gesehen', recentList());
+  EPG.scan();
+  if (!heroItems.length) renderHero();
+}
+/** Live-TV: alle Sender, „Favoriten“ ist der erste Chip. */
+function renderLive() {
+  const g = groups(), favs = favList();
+  if (state.cat === FAV_CAT ? !favs.length : state.cat !== 'Alle' && !g.has(state.cat)) state.cat = 'Alle';
+  const names = [...(favs.length ? [FAV_CAT] : []), 'Alle', ...g.keys()];
+  $('#chips').innerHTML = names.map(n => `<button class="chip focusable ${state.cat === n ? 'active' : ''}" data-cat="${esc(n)}">${n === FAV_CAT ? '★ ' : ''}${esc(n)}</button>`).join('');
   const vis = visibleChannels().length;
   $('#liveCount').textContent = state.channels.length ? vis + ' Sender' + (vis !== state.channels.length ? ` (${state.channels.length - vis} ausgeblendet)` : '') : '';
-  $('#homeTop').innerHTML = continueRail() + channelRail('Meine Favoriten', favList()) + channelRail('Zuletzt gesehen', recentList());
-
   let rows = '';
   if (state.cat === 'Alle') {
     let n = 0;
     for (const [name, list] of g) { if (n++ >= ROWS_MAX) break; rows += channelRail(name, list, name); }
     if (g.size > ROWS_MAX) rows += `<p class="empty">Weitere ${g.size - ROWS_MAX} Kategorien oben in der Leiste.</p>`;
   } else {
-    const list = g.get(state.cat) || [];
+    const list = state.cat === FAV_CAT ? favs : g.get(state.cat) || [];
     rows = `<div class="grid">${list.slice(0, GRID_MAX).map(tileHTML).join('')}</div>` +
       (list.length > GRID_MAX ? `<p class="empty">Weitere ${list.length - GRID_MAX} Sender über die Suche.</p>` : '');
   }
-  $('#homeRows').innerHTML = rows || `<p class="empty">Noch keine Sender. Unter „Einstellungen“ eine M3U-Playlist oder einen Xtream-Zugang hinzufügen.</p>`;
+  $('#liveRows').innerHTML = rows || `<p class="empty">Noch keine Sender. Unter „Einstellungen“ eine M3U-Playlist oder einen Xtream-Zugang hinzufügen.</p>`;
   EPG.scan();
-  if (!heroItems.length) renderHero();
 }
-function discoverRowsHTML(ids) {
-  const tabs = TM.tabs().filter(t => !ids || ids.includes(t.id));
-  return tabs.map(t => {
-    let items = TM.list(t.id);
-    if (t.rank) items = items.slice(0, 10);
-    if (!items.length) return TM.loading.has(t.id) || !TM.cache[t.id] ? railHTML(t.label, skeletons(5)) : '';
-    return railHTML(t.label, items.map((p, i) => showTileHTML(p, t.rank ? i + 1 : 0)).join(''));
-  }).join('');
+
+/* ---------- Empfehlungen: nur Titel, die dein Anbieter hat ---------- */
+/** 'all' = ohne Xtream nicht prüfbar, 'filter' = Katalog da, 'wait' = lädt noch, 'none' = Katalog nicht verfügbar */
+function availMode(type) {
+  if (!XS.accounts().length) return 'all';
+  const S = CAT[type === 'movie' ? 'vod' : 'series'];
+  if (S.status === 'ready') return 'filter';
+  return S.status === 'error' || S.status === 'none' ? 'none' : 'wait';
 }
-function renderDiscover() {
+function availList(id, type) {
+  const mode = availMode(type), raw = TM.list(id);
+  if (mode === 'none') return [];
+  if (mode === 'all') return raw;
+  if (mode === 'wait') return null;
+  return raw.filter(p => XS.has(p));
+}
+function recRowHTML(t, moreView) {
+  const raw = TM.list(t.id);
+  if (!raw.length && (TM.loading.has(t.id) || !TM.cache[t.id])) return railHTML(t.label, skeletons(5));
+  const list = availList(t.id, t.type);
+  if (!list) return railHTML(t.label, skeletons(5));
+  const items = (t.rank ? list.slice(0, 10) : list).map(p => showTileHTML(p, t.rank ? raw.indexOf(p) + 1 : 0));
+  if (!items.length) return '';
+  const more = moreView ? `<div class="tile show more focusable" tabindex="0" data-view="${moreView}"><div class="art"><span>Alle ${moreView === 'movies' ? 'Filme' : 'Serien'} →</span></div><div class="caption">&nbsp;</div></div>` : '';
+  return railHTML(t.label, items.join('') + more);
+}
+function renderRecs() {
   keepFocus(() => {
     if (!TM.key()) {
-      $('#homeDiscover').innerHTML = '';
-      $('#discoverRows').innerHTML = `<div class="pad"><div class="group"><div class="row-item"><div class="meta"><b>Serien-Empfehlungen einrichten</b>
+      const setup = `<div class="pad"><div class="group"><div class="row-item"><div class="meta"><b>Empfehlungen einrichten</b>
         <small>Melde dich mit deinem Serien-Watchlist-Konto an oder hinterlege einen TMDB-Schlüssel.</small></div>
         <div class="actions"><button class="btn primary small focusable" data-view="settings">Zu den Einstellungen</button></div></div></div></div>`;
+      $('#homeRecs').innerHTML = '';
+      $('#serRecs').innerHTML = setup; $('#movRecs').innerHTML = setup;
       return;
     }
-    $('#homeDiscover').innerHTML = discoverRowsHTML(['forYou', 'top']);
-    $('#discoverRows').innerHTML = discoverRowsHTML(null);
+    const tabs = TM.tabs();
+    $('#homeRecs').innerHTML = tabs.filter(t => ['forYou', 'top', 'mTop'].includes(t.id)).map(t => recRowHTML(t, t.type === 'movie' ? 'movies' : 'series')).join('');
+    $('#serRecs').innerHTML = tabs.filter(t => t.type !== 'movie').map(t => recRowHTML(t)).join('');
+    $('#movRecs').innerHTML = tabs.filter(t => t.type === 'movie').map(t => recRowHTML(t)).join('');
   });
 }
+
+/* ---------- Suche: eine Stelle für Sender, Serien und Filme ---------- */
+const SEARCH_MAX = 30;
+function catalogHits(kind, q) {
+  const S = CAT[kind];
+  if (S.status !== 'ready' || !q) return [];
+  const H = new Set(state.settings[S.hide] || []), out = [];
+  for (let i = 0; i < S.items.length; i++) {
+    const it = S.items[i].it;
+    if (!it.n.includes(q) || (H.size && H.has(it.cat))) continue;
+    out.push([i, it.n.startsWith(q) ? 0 : 1, it.n.length]);
+  }
+  return out.sort((a, b) => a[1] - b[1] || a[2] - b[2]).slice(0, SEARCH_MAX).map(x => x[0]);
+}
+function catalogRail(kind, q) {
+  const S = CAT[kind];
+  if (S.status === 'loading' || S.status === 'idle') return railHTML(S.word, `<div class="tile poster skeleton"><div class="art"></div><div class="caption">&nbsp;</div></div>`.repeat(4));
+  const hits = catalogHits(kind, q);
+  return hits.length ? railHTML(S.word, hits.map(i => serTileHTML(kind, S.items[i], i)).join(''), hits.length >= SEARCH_MAX ? SEARCH_MAX + '+' : hits.length) : '';
+}
 function renderSearch() {
-  const q = $('#q').value.trim().toLowerCase();
-  const res = q ? visibleChannels().filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q)) : [];
-  $('#searchInfo').textContent = q ? `${res.length} Sender` + (res.length > GRID_MAX ? ` – die ersten ${GRID_MAX} werden angezeigt` : '') : '';
-  $('#searchGrid').innerHTML = !q ? `<p class="empty">Mit der Tastatur links lostippen – Treffer erscheinen sofort.</p>`
-    : res.length ? res.slice(0, GRID_MAX).map(tileHTML).join('') : `<p class="empty">Keine Sender zu „${esc(q)}“.</p>`;
+  const raw = $('#q').value.trim(), q = raw.toLowerCase();
+  if (!q) {
+    $('#searchInfo').textContent = '';
+    $('#searchGrid').innerHTML = `<p class="empty">Mit der Tastatur links lostippen – Sender, Serien und Filme erscheinen sofort.</p>`;
+    $('#searchShows').innerHTML = '';
+    return;
+  }
+  const res = visibleChannels().filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q));
+  let html = res.length ? railHTML('Sender', res.slice(0, SEARCH_MAX).map(tileHTML).join(''), res.length) : '';
+  const xt = XS.accounts().length > 0;
+  if (xt) { const n = XS.norm(raw); html += catalogRail('series', n) + catalogRail('vod', n); }
+  $('#searchInfo').textContent = '';
+  keepFocus(() => {
+    $('#searchGrid').innerHTML = html || (xt || !TM.key() ? `<p class="empty">Nichts gefunden zu „${esc(raw)}“.</p>` : '');
+    if (xt) $('#searchShows').innerHTML = '';
+  });
   EPG.scan();
 }
 let searchTimer = null;
+/** Ohne Xtream-Zugang: TMDB-Treffer als Ersatz. */
 function searchShows() {
   clearTimeout(searchTimer);
   const q = $('#q').value.trim();
-  if (q.length < 2 || !TM.key()) { $('#searchShows').innerHTML = ''; return; }
+  if (q.length < 2 || !TM.key() || XS.accounts().length) { if (!XS.accounts().length) $('#searchShows').innerHTML = ''; return; }
   searchTimer = setTimeout(async () => {
     try {
       const res = await TM.search(q);
@@ -348,12 +402,6 @@ function searchShows() {
       keepFocus(() => { $('#searchShows').innerHTML = res.length ? railHTML('Serien & Filme', res.slice(0, 20).map(p => showTileHTML(p)).join(''), res.length) : ''; });
     } catch (e) { $('#searchShows').innerHTML = ''; }
   }, 450);
-}
-function renderFavs() {
-  const f = favList();
-  $('#favGrid').innerHTML = f.length ? f.map(tileHTML).join('')
-    : `<p class="empty">Noch keine Favoriten. Auf einem Sender die Menü-Taste (≡) drücken oder im Player ☆ wählen.</p>`;
-  EPG.scan();
 }
 function srcName(id) {
   if (id === 'manual') return 'Manuell';
@@ -400,8 +448,9 @@ function renderSettings() {
   renderWlGroup();
   renderVpn();
   renderUpdate();
-  const nl = (s.hideLive || []).length, ns = (s.hideSeries || []).length;
-  $('#catOpenSub').textContent = nl || ns ? `Live-TV: ${nl} · Serien: ${ns} ausgeblendet` : 'Alle Kategorien sichtbar';
+  const nl = (s.hideLive || []).length, ns = (s.hideSeries || []).length, nv = (s.hideVod || []).length;
+  $('#catOpenSub').textContent = nl || ns || nv ? `Live-TV: ${nl} · Serien: ${ns} · Filme: ${nv} ausgeblendet` : 'Alle Kategorien sichtbar';
+  $('#manageOpenSub').textContent = `${state.channels.length} Kanäle · ${state.favs.length} Favoriten`;
 }
 function renderWlGroup() {
   const own = (state.settings.tmdbKey || '').trim();
@@ -423,11 +472,11 @@ function renderWlGroup() {
   if (active && document.activeElement.tagName === 'INPUT') return; // Eingabe nicht unterbrechen
   $('#wlGroup').innerHTML = html;
 }
-function renderAll() { renderHome(); renderSearch(); renderFavs(); renderManage(); renderSettings(); renderDiscover(); }
+function renderAll() { renderHome(); renderLive(); renderSearch(); renderManage(); renderSettings(); renderRecs(); }
 function focusSel(a) {
   const d = a && a.dataset;
   if (!d) return null;
-  for (const k of ['card', 'show', 'cat', 'resume', 'ev', 'spc']) if (d[k]) return `[data-${k}="${CSS.escape(d[k])}"]`;
+  for (const k of ['card', 'show', 'cat', 'resume', 'ev', 'spc', 'ser', 'view']) if (d[k]) return `[data-${k}="${CSS.escape(d[k])}"]`;
   return null;
 }
 const visibleOf = sel => [...document.querySelectorAll(sel)].find(e => e.getClientRects().length);
@@ -439,7 +488,7 @@ function keepFocus(fn) {
     if (el) el.focus({ preventScroll: true });
   }
 }
-function refresh() { persist(); keepFocus(() => { renderHome(); renderSearch(); renderFavs(); renderManage(); renderSettings(); }); }
+function refresh() { persist(); keepFocus(() => { renderHome(); renderLive(); renderSearch(); renderManage(); renderSettings(); }); }
 let toastTimer = null;
 function toast(msg) {
   const t = $('#toast');
@@ -452,7 +501,7 @@ function toast(msg) {
 /* ================= Hero (Top-Serien, sonst Live-Sender) ================= */
 let heroItems = [], heroIdx = 0, heroTimer = null;
 function setupHero() {
-  heroItems = TM.list('top').filter(p => p.backdrop).slice(0, 5);
+  heroItems = (availList('top', 'tv') || []).filter(p => p.backdrop).slice(0, 5);
   heroIdx = 0;
   renderHero();
   clearInterval(heroTimer);
@@ -493,12 +542,12 @@ function renderHero() {
     heroBackdrop(`${TM.IMG}w1280${p.backdrop}`);
     const d = TM.details_[p.type + ':' + p.id];
     const logo = d && TM.pickLogo(d);
-    box.innerHTML = `<div class="eyebrow"><span class="t10">TOP<b>10</b></span>Platz ${heroIdx + 1} der Serien diese Woche</div>
+    box.innerHTML = `<div class="eyebrow"><span class="t10">TOP<b>10</b></span>Platz ${TM.list('top').indexOf(p) + 1} der Serien diese Woche</div>
       ${logo ? `<img class="hero-logo" src="${TM.IMG}w500${logo}" alt="">` : `<h1>${esc(p.title)}</h1>`}
       <div class="meta">${esc(TM.info(p))}</div>
       <p class="ov">${esc(p.overview)}</p>
-      <div class="btn-row"><button class="btn primary focusable" data-show="${p.type}:${p.id}">Details</button>
-      <button class="btn focusable" data-livesearch="${esc(p.title)}">Im Live-TV suchen</button></div>`;
+      <div class="btn-row"><button class="btn primary focusable" data-play="${p.type}:${p.id}">▶ Abspielen</button>
+      <button class="btn focusable" data-show="${p.type}:${p.id}">Details</button></div>`;
     $('#heroDots').innerHTML = heroItems.map((_, i) => `<i class="${i === heroIdx ? 'on' : ''}"></i>`).join('');
     heroEnter('tmdb:' + p.id);
     if (!d) TM.details(p.type, p.id).then(() => { if (heroItems[heroIdx] === p && !$('#hero').contains(document.activeElement)) renderHero(); }).catch(() => {});
@@ -525,10 +574,10 @@ async function loadDiscover(force) {
       if (!TM.key()) await WL.tmdbKey().catch(() => {});
     }
   } catch (e) {}
-  if (!TM.key()) { renderDiscover(); renderHero(); return; }
-  renderDiscover();
+  if (!TM.key()) { renderRecs(); renderHero(); return; }
+  renderRecs();
   await Promise.all(TM.tabs().map(t => TM.ensure(t, force).catch(() => {}).then(() => {
-    renderDiscover();
+    renderRecs();
     if (t.id === 'top') setupHero();
   })));
 }
@@ -564,7 +613,7 @@ function renderSheet(p, d) {
     <div class="btn-row">
       <button class="btn primary focusable" id="shIptv" data-iptv="${key}">▶ Beim Anbieter suchen</button>
       ${WL.connected ? `<button class="btn focusable" id="shAdd" ${onList ? 'disabled' : ''}>${onList ? '✓ Auf deiner Watchlist' : '+ Auf die Watchlist'}</button>` : ''}
-      <button class="btn focusable" id="shLive" data-livesearch="${esc(p.title)}">Im Live-TV suchen</button>
+      <button class="btn focusable" id="shLive" data-livesearch="${esc(p.title)}">Suchen</button>
       <button class="btn focusable" id="shClose">Schließen</button>
     </div>`;
   const add = $('#shAdd');
@@ -574,7 +623,7 @@ function renderSheet(p, d) {
       const det = d || await TM.details(p.type, p.id);
       await WL.addPlanned(p.type, det);
       toast(`„${p.title}“ steht jetzt auf deiner Watchlist`);
-      renderSheet(p, det); renderDiscover();
+      renderSheet(p, det); renderRecs();
       $('#shLive').focus();
     } catch (e) { toast(e.message); add.disabled = false; add.textContent = '+ Auf die Watchlist'; }
   };
@@ -750,113 +799,118 @@ function iptvClick(el) {
   }
 }
 
-/* ================= Serien-Reiter (Katalog des Anbieters) ================= */
-const SER = { items: null, cats: [], cat: 'Alle', list: [], shown: 0, BATCH: 60, status: 'idle', msg: '', loading: false };
+/* ================= Serien- & Film-Katalog des Anbieters ================= */
+const mkCat = (kind, view, pre, hide, word, one) => ({ kind, view, pre, hide, word, one, items: null, cats: [], cat: 'Alle', list: [], shown: 0, status: 'idle', msg: '', loading: null });
+const CAT = { series: mkCat('series', 'series', 'ser', 'hideSeries', 'Serien', 'Serie'), vod: mkCat('vod', 'movies', 'mov', 'hideVod', 'Filme', 'Film') };
+const SER = CAT.series;   // Bildschirmschoner nutzt die Serien-Cover
+const CAT_BATCH = 60;
 const cleanName = n => String(n || '').replace(/^\s*((\||\[)[^|\]]{1,12}(\||\])\s*|[A-Z]{2,4}\s*[-:|]\s+)+/, '').trim() || n;
-async function loadSeriesCatalog(force) {
-  if (SER.loading || (!force && SER.items)) { if (!force) renderSeriesView(false); return; }
+function resetCatalogs() { for (const k in CAT) { if (!CAT[k].loading) { CAT[k].items = null; CAT[k].status = 'idle'; } } XS.idx = {}; }
+/** Beide Kataloge im Hintergrund laden (für Empfehlungen, Suche und Reiter). */
+function bgCatalogs() { if (XS.accounts().length) { loadCatalog('series', false); loadCatalog('vod', false); } }
+function loadCatalog(kind, force) {
+  const S = CAT[kind];
+  if (S.loading) return S.loading;
+  if (!force && S.items) { if (state.view === S.view) renderCatalog(kind, false); return Promise.resolve(); }
   const accs = XS.accounts();
-  if (!accs.length) { SER.status = 'none'; SER.items = null; return renderSeriesView(true); }
-  SER.loading = true; SER.status = 'loading'; renderSeriesView(true);
-  const errors = [], items = [], cats = [];
-  await Promise.all(accs.map(async acc => {
-    try {
-      const c = await XS.catalog(acc, force, 'series');
-      for (const it of c.list) items.push({ acc, it });
-      for (const n of c.cats) if (!cats.includes(n)) cats.push(n);
-    } catch (e) { errors.push(`${acc.name}: ${e.message}`); }
-  }));
-  SER.loading = false;
-  if (!items.length) {
-    SER.items = null;
-    SER.status = 'error';
-    SER.msg = errors.length ? errors.join(' · ') : 'Dein Anbieter bietet keine Serien an.';
-  } else {
-    SER.items = items; SER.status = 'ready';
-    const used = new Set(items.map(x => x.it.cat).filter(Boolean));
-    SER.cats = cats.filter(n => used.has(n)).concat([...used].filter(n => !cats.includes(n)));
-    if (SER.cat !== 'Alle' && !used.has(SER.cat)) SER.cat = 'Alle';
-    if (errors.length) toast(errors.join(' · '));
-  }
-  if (state.view === 'series') renderSeriesView(true);
+  if (!accs.length) { S.status = 'none'; S.items = null; afterCatalog(kind); return Promise.resolve(); }
+  S.status = 'loading';
+  if (state.view === S.view) renderCatalog(kind, true);
+  S.loading = (async () => {
+    const errors = [], items = [], cats = [];
+    await Promise.all(accs.map(async acc => {
+      try {
+        const c = await XS.catalog(acc, force, kind);
+        for (const it of c.list) items.push({ acc, it });
+        for (const n of c.cats) if (!cats.includes(n)) cats.push(n);
+      } catch (e) { errors.push(`${acc.name}: ${e.message}`); }
+    }));
+    if (!items.length) {
+      S.items = null; S.status = 'error';
+      S.msg = errors.length ? errors.join(' · ') : `Dein Anbieter bietet keine ${S.word} an.`;
+      delete XS.idx[kind];
+    } else {
+      S.items = items; S.status = 'ready';
+      const used = new Set(items.map(x => x.it.cat).filter(Boolean));
+      S.cats = cats.filter(n => used.has(n)).concat([...used].filter(n => !cats.includes(n)));
+      if (S.cat !== 'Alle' && !used.has(S.cat)) S.cat = 'Alle';
+      XS.buildIndex(kind, items);
+      if (errors.length && state.view === S.view) toast(errors.join(' · '));
+    }
+  })().finally(() => { S.loading = null; afterCatalog(kind); });
+  return S.loading;
 }
-function serTileHTML(x, i) {
+function afterCatalog(kind) {
+  const S = CAT[kind];
+  if (state.view === S.view) renderCatalog(kind, true);
+  if (state.view === 'search') renderSearch();
+  renderRecs();
+  if (kind === 'series') setupHero();
+}
+function serTileHTML(kind, x, i) {
   const it = x.it;
-  return `<div class="tile poster focusable" tabindex="0" data-ser="${i}">
+  return `<div class="tile poster focusable" tabindex="0" data-ser="${kind}:${i}">
     <div class="art"><span class="ini">${esc(initials(cleanName(it.name)))}</span>
       ${it.cover ? `<img class="cov" src="${esc(it.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
     <div class="caption">${esc(cleanName(it.name))}</div>
     <div class="sub">${esc([it.year, it.cat].filter(Boolean).join(' · '))}</div>
   </div>`;
 }
-function renderSeriesView(reset) {
-  const body = $('#serBody');
-  if (SER.status === 'none') {
-    $('#serChips').innerHTML = ''; $('#serCount').textContent = '';
-    body.innerHTML = `<div class="pad"><div class="group"><div class="row-item"><div class="meta"><b>Keine Xtream-Quelle</b>
-      <small>Der Serienkatalog kommt von deinem IPTV-Anbieter. Unter „Einstellungen“ einen Xtream-Zugang hinzufügen.</small></div>
-      <div class="actions"><button class="btn primary small focusable" data-view="settings">Zu den Einstellungen</button></div></div></div></div>`;
-    return;
-  }
-  if (SER.status === 'loading') {
-    $('#serChips').innerHTML = ''; $('#serCount').textContent = '';
-    body.innerHTML = `<p class="hint pad">Lade den Serienkatalog deines Anbieters … (beim ersten Mal etwas länger)</p>
+function renderCatalog(kind, reset) {
+  const S = CAT[kind], body = $(`#${S.pre}Body`), chips = $(`#${S.pre}Chips`), count = $(`#${S.pre}Count`);
+  const box = (title, sub, btn) => `<div class="pad"><div class="group"><div class="row-item"><div class="meta"><b>${title}</b><small${btn === 'retry' ? ' class="err"' : ''}>${esc(sub)}</small></div>
+    <div class="actions">${btn === 'retry' ? `<button class="btn small focusable" data-ser-act="retry" data-kind="${kind}">Erneut versuchen</button>` : `<button class="btn primary small focusable" data-view="settings">Zu den Einstellungen</button>`}</div></div></div></div>`;
+  if (S.status !== 'ready') { chips.innerHTML = ''; count.textContent = ''; }
+  if (S.status === 'none') { body.innerHTML = box('Keine Xtream-Quelle', `Der Katalog kommt von deinem IPTV-Anbieter. Unter „Einstellungen“ einen Xtream-Zugang hinzufügen.`); return; }
+  if (S.status === 'loading' || S.status === 'idle') {
+    body.innerHTML = `<p class="hint pad">Lade den Katalog deines Anbieters … (beim ersten Mal etwas länger)</p>
       <div class="grid posters">${Array.from({ length: 12 }, () => '<div class="tile poster skeleton"><div class="art"></div><div class="caption">&nbsp;</div></div>').join('')}</div>`;
     return;
   }
-  if (SER.status === 'error') {
-    $('#serChips').innerHTML = ''; $('#serCount').textContent = '';
-    body.innerHTML = `<div class="pad"><div class="group"><div class="row-item"><div class="meta"><b>Serienkatalog nicht verfügbar</b>
-      <small class="err">${esc(SER.msg)}</small></div>
-      <div class="actions"><button class="btn small focusable" data-ser-act="retry">Erneut versuchen</button></div></div></div></div>`;
-    return;
-  }
-  if (SER.status !== 'ready') return;
+  if (S.status === 'error') { body.innerHTML = box(`${S.word}-Katalog nicht verfügbar`, S.msg, 'retry'); return; }
   if (!reset && body.querySelector('.grid')) return;
-  const q = XS.norm($('#serQ').value.trim());
-  const all = SER.items, HS = new Set(state.settings.hideSeries || []);
-  if (HS.has(SER.cat)) SER.cat = 'Alle';
-  SER.list = [];
+  const all = S.items, HS = new Set(state.settings[S.hide] || []);
+  if (HS.has(S.cat)) S.cat = 'Alle';
+  S.list = [];
   let visAll = 0;
   for (let i = 0; i < all.length; i++) {
     const it = all[i].it;
     if (HS.size && HS.has(it.cat)) continue;
     visAll++;
-    if (SER.cat !== 'Alle' && it.cat !== SER.cat) continue;
-    if (q && !it.n.includes(q)) continue;
-    SER.list.push(i);
+    if (S.cat !== 'Alle' && it.cat !== S.cat) continue;
+    S.list.push(i);
   }
-  $('#serCount').textContent = SER.list.length.toLocaleString('de-DE') + (SER.list.length !== visAll ? ' von ' + visAll.toLocaleString('de-DE') : '')
+  count.textContent = S.list.length.toLocaleString('de-DE') + (S.list.length !== visAll ? ' von ' + visAll.toLocaleString('de-DE') : '')
     + (visAll !== all.length ? ` · ${(all.length - visAll).toLocaleString('de-DE')} ausgeblendet` : '');
-  $('#serChips').innerHTML = ['Alle', ...SER.cats.filter(n => !HS.has(n))].map(n => `<button class="chip focusable ${SER.cat === n ? 'active' : ''}" data-scat="${esc(n)}">${esc(n)}</button>`).join('');
-  SER.shown = 0;
-  body.innerHTML = SER.list.length ? '<div class="grid posters" id="serGrid"></div>' : `<p class="empty">Keine Serien gefunden.</p>`;
-  seriesMore(true);
+  chips.innerHTML = ['Alle', ...S.cats.filter(n => !HS.has(n))].map(n => `<button class="chip focusable ${S.cat === n ? 'active' : ''}" data-scat="${esc(n)}" data-kind="${kind}">${esc(n)}</button>`).join('');
+  S.shown = 0;
+  body.innerHTML = S.list.length ? `<div class="grid posters" id="${S.pre}Grid"></div>` : `<p class="empty">Keine ${S.word} gefunden.</p>`;
+  catalogMore(kind, true);
 }
 /** Nächsten Block anhängen, sobald das Ende in Sichtweite ist. */
-function seriesMore(force) {
-  const g = $('#serGrid');
-  if (!g || SER.shown >= SER.list.length) return;
+function catalogMore(kind, force) {
+  const S = CAT[kind], g = $(`#${S.pre}Grid`);
+  if (!g || S.shown >= S.list.length) return;
   if (!force) {
     const last = g.lastElementChild;
     if (last && last.getBoundingClientRect().top > window.innerHeight * 2.5) return;
   }
-  const n = Math.min(SER.list.length, SER.shown + SER.BATCH);
+  const n = Math.min(S.list.length, S.shown + CAT_BATCH);
   let html = '';
-  for (let k = SER.shown; k < n; k++) html += serTileHTML(SER.items[SER.list[k]], SER.list[k]);
+  for (let k = S.shown; k < n; k++) html += serTileHTML(kind, S.items[S.list[k]], S.list[k]);
   g.insertAdjacentHTML('beforeend', html);
-  SER.shown = n;
+  S.shown = n;
 }
-/** Katalog-Serie in der bestehenden Staffel-/Folgenansicht öffnen. */
-function openCatalogSeries(i) {
-  const x = SER.items && SER.items[i];
+/** Katalog-Titel in der bestehenden Staffel-/Folgen- bzw. Filmansicht öffnen. */
+function openCatalogItem(kind, i) {
+  const x = CAT[kind].items && CAT[kind].items[i];
   if (!x || sheetOpen) return;
   lastFocus = document.activeElement; sheetOpen = true;
   pushOverlay('sheet');
   $('#sheet').classList.add('open');
   sheetAnim();
   $('#sheetBd').style.backgroundImage = x.it.cover ? `url("${x.it.cover.replace(/"/g, '%22')}")` : 'none';
-  const p = { type: 'tv', id: x.it.tmdb || 0, title: cleanName(x.it.name), backdrop: null, poster: null };
+  const p = { type: kind === 'vod' ? 'movie' : 'tv', id: x.it.tmdb || 0, title: cleanName(x.it.name), backdrop: null, poster: null };
   ip = { p, d: null, status: 'loadingShow', msg: '', hits: [{ acc: x.acc, it: x.it, s: 100 }], sel: null, info: null, season: null, token: Date.now(), cat: true };
   pushOverlay('iptv');
   $('#sheet').classList.add('iptv');
@@ -872,9 +926,9 @@ function catPrefix(n) {
 }
 function catNames(kind) {
   if (kind === 'live') return [...groups(state.channels).keys()];
-  return SER.status === 'ready' ? SER.cats.slice() : null;
+  return CAT[kind].status === 'ready' ? CAT[kind].cats.slice() : null;
 }
-const hideKey = kind => kind === 'live' ? 'hideLive' : 'hideSeries';
+const hideKey = kind => kind === 'live' ? 'hideLive' : CAT[kind].hide;
 function openCats() {
   show('cats');
   setCatKind(catKind, true);
@@ -887,7 +941,7 @@ function closeCats() {
 function setCatKind(k, focusSeg) {
   catKind = k;
   $$('#catSeg [data-ckind]').forEach(b => b.classList.toggle('sel', b.dataset.ckind === k));
-  if (k === 'series' && SER.status !== 'ready') loadSeriesCatalog(false).then(() => { if (state.view === 'cats' && catKind === 'series') renderCats(); });
+  if (k !== 'live' && CAT[k].status !== 'ready') loadCatalog(k, false).then(() => { if (state.view === 'cats' && catKind === k) renderCats(); });
   renderCats();
   if (focusSeg) { const b = $(`#catSeg [data-ckind="${k}"]`); if (b) b.focus({ preventScroll: true }); }
 }
@@ -895,7 +949,8 @@ function renderCats() {
   const names = catNames(catKind), body = $('#catBody');
   const keep = focusSel(document.activeElement) || (document.activeElement && document.activeElement.dataset && ['hcat', 'hpre', 'hall'].map(k => document.activeElement.dataset[k] != null ? `[data-${k}="${CSS.escape(document.activeElement.dataset[k])}"]` : null).find(Boolean));
   if (!names) {
-    body.innerHTML = `<p class="group-foot" style="margin-top:1rem">${SER.status === 'error' ? esc(SER.msg) : SER.status === 'none' ? 'Keine Xtream-Quelle eingerichtet.' : 'Lade Serienkategorien …'}</p>`;
+    const S = CAT[catKind];
+    body.innerHTML = `<p class="group-foot" style="margin-top:1rem">${S.status === 'error' ? esc(S.msg) : S.status === 'none' ? 'Keine Xtream-Quelle eingerichtet.' : 'Lade Kategorien …'}</p>`;
     return;
   }
   if (!names.length) { body.innerHTML = `<p class="group-foot" style="margin-top:1rem">Keine Kategorien vorhanden.</p>`; return; }
@@ -919,8 +974,8 @@ function renderCats() {
 function setHidden(kind, list) {
   state.settings[hideKey(kind)] = [...new Set(list)];
   persist();
-  if (kind === 'live') { state.cat = groups().has(state.cat) ? state.cat : 'Alle'; keepFocus(() => { renderHome(); renderSearch(); }); }
-  else if (SER.status === 'ready') renderSeriesView(true);
+  if (kind === 'live') keepFocus(() => { renderLive(); renderSearch(); });
+  else if (CAT[kind].status === 'ready') renderCatalog(kind, true);
   renderSettings();
   renderCats();
 }
@@ -1223,7 +1278,7 @@ async function openDeep(uri) {
   }
   if (route === 'title' && parts[2]) {
     const type = parts[1] === 'movie' ? 'movie' : 'tv', id = Number(parts[2]), key = type + ':' + id;
-    show(type === 'movie' ? 'discover' : 'home');
+    show(type === 'movie' ? 'movies' : 'series');
     if (!TM.key()) { toast('Für Serien-Links bitte zuerst das Watchlist-Konto oder einen TMDB-Schlüssel einrichten'); return; }
     let p = TM.find(key);
     if (!p) {
@@ -1237,7 +1292,7 @@ async function openDeep(uri) {
     if (q.get('play') === '1') openIptv(key, { s: Number(q.get('s')) || 0, e: Number(q.get('e')) || 0 });
     return;
   }
-  if (['sport', 'series', 'discover', 'search', 'favorites', 'settings'].includes(route)) { show(route); return; }
+  if (['sport', 'series', 'movies', 'live', 'discover', 'search', 'favorites', 'settings'].includes(route)) { show(route); return; }
   show('home');
 }
 window.openDeep = openDeep;
@@ -1265,22 +1320,35 @@ window.addEventListener('popstate', () => {
 // Wird von der App aufgerufen, wenn kein Overlay offen ist: erst zur Startseite, dann beenden
 function handleBack() {
   if (state.view === 'cats') { closeCats(); return true; }
+  if (state.view === 'manage') { closeManage(); return true; }
   if (state.view !== 'home') { show('home'); return true; }
   return false;
 }
+function openManage() { show('manage'); const f = $('#manageList .focusable') || $('#view-manage .focusable'); if (f) f.focus({ preventScroll: true }); }
+function closeManage() {
+  show('settings');
+  const b = $('#manageOpen');
+  if (b) { b.focus({ preventScroll: true }); b.scrollIntoView({ block: 'center' }); }
+}
 
 /* ================= Ansichten ================= */
+const TAB_OF = { manage: 'settings', cats: 'settings' };   // Unterseiten der Einstellungen
 function show(view) {
+  if (view === 'discover') view = 'series';                  // alte Links (Launcher)
+  if (view === 'favorites') { view = 'live'; if (favList().length) { state.cat = FAV_CAT; renderLive(); } }
   state.view = view;
-  if (view === 'series') loadSeriesCatalog(false);
+  if (view === 'series') loadCatalog('series', false);
+  if (view === 'movies') loadCatalog('vod', false);
+  if (view === 'search') bgCatalogs();
   if (view === 'sport') { renderSport(); SP.refresh(false); }
+  const tabView = TAB_OF[view] || view;
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
-  $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === tabView));
   window.scrollTo(0, 0);
   EPG.scan();
   updateHeader(); moveTabInd();
-  const tab = $(`.tabbar [data-view="${view}"]`);
-  if (tab) tab.focus({ preventScroll: true });
+  const tab = $(`.tabbar [data-view="${tabView}"]`);
+  if (tab && !TAB_OF[view]) tab.focus({ preventScroll: true });
 }
 
 /* ================= Player ================= */
@@ -2034,6 +2102,7 @@ function navigate(dir) {
     best = band[0].el;
   }
   if (!best) return;
+  if (best.closest('.tabbar') && !cur.closest('.tabbar')) best = $('.tabbar button.active') || best;
   best.focus({ preventScroll: true });
   if (best.closest('header')) return;
   best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
@@ -2049,6 +2118,12 @@ document.addEventListener('keydown', e => {
   if (sheetOpen && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); ip ? closeIptv() : closeSheet(); return; }
   if (typing && !['ArrowUp', 'ArrowDown', 'Escape'].includes(e.key)) return;
   if (state.view === 'cats' && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); closeCats(); return; }
+  if (state.view === 'manage' && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); closeManage(); return; }
+  // Reiterleiste: ◀ ▶ wechselt den Reiter sofort, ohne OK
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && a && a.closest && a.closest('.tabbar') && !sheetOpen) {
+    const tabs = $$('.tabbar [data-view]'), nx = tabs[tabs.indexOf(a) + (e.key === 'ArrowRight' ? 1 : -1)];
+    if (nx) { e.preventDefault(); show(nx.dataset.view); return; }
+  }
   if (NAV_KEYS.includes(e.key)) { e.preventDefault(); navigate(e.key); return; }
   if (e.key === 'Enter' && a && a.classList.contains('tile')) { e.preventDefault(); a.click(); return; }
   if ((e.key === 'f' || e.key === 'ContextMenu') && a && a.dataset.card) { e.preventDefault(); toggleFav(a.dataset.card); }
@@ -2067,12 +2142,15 @@ document.addEventListener('click', e => {
   if (ipo) { openIptv(ipo.dataset.iptv); return; }
   const ls = t.closest('[data-livesearch]');
   if (ls) { liveSearch(ls.dataset.livesearch); return; }
+  const pl = t.closest('[data-play]');
+  if (pl) { const k = pl.dataset.play; openSheet(k).then(() => { if (sheetOpen && !ip) openIptv(k); }); return; }
   const shw = t.closest('[data-show]');
   if (shw) { openSheet(shw.dataset.show); return; }
   const cat = t.closest('[data-cat]');
   if (cat) {
     state.cat = cat.dataset.cat;
-    renderHome();
+    if (state.view !== 'live') show('live');
+    renderLive();
     const chip = $(`.chip[data-cat="${CSS.escape(state.cat)}"]`);
     if (chip) { chip.focus({ preventScroll: true }); chip.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); }
     return;
@@ -2100,11 +2178,18 @@ document.addEventListener('click', e => {
   const rs = t.closest('[data-resume]');
   if (rs) { playResume(rs.dataset.resume); return; }
   const sc = t.closest('[data-scat]');
-  if (sc) { SER.cat = sc.dataset.scat; renderSeriesView(true); const c = visibleOf(`[data-scat="${CSS.escape(SER.cat)}"]`); if (c) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest', inline: 'center' }); } return; }
+  if (sc) {
+    const k = sc.dataset.kind, S = CAT[k];
+    S.cat = sc.dataset.scat; renderCatalog(k, true);
+    const c = visibleOf(`[data-scat="${CSS.escape(S.cat)}"][data-kind="${k}"]`);
+    if (c) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest', inline: 'center' }); }
+    return;
+  }
   const sr = t.closest('[data-ser]');
-  if (sr) { openCatalogSeries(Number(sr.dataset.ser)); return; }
+  if (sr) { const [k, n] = sr.dataset.ser.split(':'); openCatalogItem(k, Number(n)); return; }
   const sv = t.closest('[data-ser-act]');
-  if (sv) { if (sv.dataset.serAct === 'retry') loadSeriesCatalog(true); return; }
+  if (sv) { if (sv.dataset.serAct === 'retry') loadCatalog(sv.dataset.kind || 'series', true); return; }
+  if (t.closest('#manageOpen')) { openManage(); return; }
   // Serien-Watchlist & TMDB (dynamisch gerendert)
   if (t.closest('#wlLogin')) return wlLogin();
   if (t.closest('#wlLogout')) { WL.logout(); TM.clear(); renderSettings(); loadDiscover(true); toast('Abgemeldet'); return; }
@@ -2115,7 +2200,8 @@ document.addEventListener('click', e => {
     loadDiscover(true); return;
   }
 });
-$('#q').addEventListener('input', () => { renderSearch(); searchShows(); });
+let searchT = null;
+$('#q').addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(renderSearch, 180); searchShows(); });
 
 /* ---------- Bildschirmtastatur (wie bei Netflix) ---------- */
 const KBD_KEYS = 'abcdefghijklmnopqrstuvwxyzäöüß1234567890'.split('');
@@ -2148,8 +2234,6 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Backspace' && $('#q').value) { e.preventDefault(); kbdInput('⌫'); }
 });
 $('#mq').addEventListener('input', renderManage);
-let serQTimer = null;
-$('#serQ').addEventListener('input', () => { clearTimeout(serQTimer); serQTimer = setTimeout(() => renderSeriesView(true), 280); });
 $('#vpnBadge').addEventListener('click', () => { if (bridge) bridge.openVpn(); });
 
 async function wlLogin() {
@@ -2251,7 +2335,7 @@ $('#resetAll').addEventListener('click', () => {
   if (!confirm('Alle Quellen, Kanäle, Favoriten und Einstellungen löschen?')) return;
   state.channels = []; state.favs = []; state.recent = []; state.sources = []; state.settings = { ...DEFAULT_SETTINGS }; state.cat = 'Alle';
   WL.logout(); TM.clear(); heroItems = [];
-  refresh(); renderDiscover(); renderHero(); toast('Zurückgesetzt');
+  resetCatalogs(); refresh(); renderRecs(); renderHero(); toast('Zurückgesetzt');
 });
 
 /* ================= ProtonVPN ================= */
@@ -2374,7 +2458,7 @@ SP.load();
 SP.onUpdate(() => { if (state.view === 'sport') renderSport(); if (sheetOpen && spSheet) renderSportSheet(); });
 EPG.load();
 EPG.onUpdate(epgPatch);
-document.addEventListener('scroll', () => { EPG.scan(); if (state.view === 'series') seriesMore(); }, true);
+document.addEventListener('scroll', () => { EPG.scan(); if (state.view === 'series') catalogMore('series'); if (state.view === 'movies') catalogMore('vod'); }, true);
 setInterval(() => {   // laufende Sendung aktuell halten
   const ids = new Set($$('.tile[data-card]').map(t => t.dataset.card));
   ids.forEach(epgPatch);
@@ -2397,6 +2481,7 @@ setInterval(checkReminders, 15000);
 setTimeout(checkReminders, 3000);
 setupHero();
 loadDiscover(false);
+setTimeout(bgCatalogs, 2500);   // Kataloge für „nur verfügbare“ Empfehlungen
 if (state.settings.autoRefresh) {
   const stale = state.sources.filter(s => !s.updated || Date.now() - s.updated > 6 * 3600 * 1000);
   (async () => { for (const s of stale) await refreshSource(s, true); })();

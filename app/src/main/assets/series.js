@@ -65,6 +65,42 @@ const XS = {
     return (this.cat_[ck] = { at: Date.now(), list: items, cats: order });
   },
 
+  /* ---------- Verfügbarkeit: hat der Anbieter diesen TMDB-Titel? ---------- */
+  idx: {},   // kind -> { byTmdb, byName, byTok, memo }
+  buildIndex(kind, items) {
+    const byTmdb = new Set(), byName = new Map(), byTok = new Map();
+    const add = (m, k, it) => { const l = m.get(k); if (l) l.push(it); else m.set(k, [it]); };
+    for (const x of items) {
+      const it = x.it;
+      if (it.tmdb) byTmdb.add(it.tmdb);
+      if (it.n) add(byName, it.n, it);
+      for (const t of new Set(it.t)) add(byTok, t, it);
+    }
+    this.idx[kind] = { byTmdb, byName, byTok, memo: new Map() };
+  },
+  /** Nur sichere Treffer (TMDB-ID, gleicher Name oder sehr ähnlicher Name mit passendem Jahr). */
+  has(p) {
+    const ix = this.idx[p.type === 'movie' ? 'vod' : 'series'];
+    if (!ix) return false;
+    const k = p.type + ':' + p.id;
+    if (ix.memo.has(k)) return ix.memo.get(k);
+    const yOk = it => !p.year || !it.year || Math.abs(Number(p.year) - Number(it.year)) <= 1;
+    let ok = ix.byTmdb.has(p.id);
+    for (const title of ok ? [] : [p.title, p.orig]) {
+      if (!title) continue;
+      const n = this.norm(title), t = this.tokens(n);
+      if (!t.length) continue;
+      if ((ix.byName.get(n) || []).some(yOk)) { ok = true; break; }
+      const lists = t.map(x => ix.byTok.get(x) || []);
+      if (lists.some(l => !l.length)) continue;
+      const rare = lists.reduce((a, b) => (b.length < a.length ? b : a));
+      const q = { n, t };
+      if (rare.some(it => yOk(it) && this.score(q, it) >= 85)) { ok = true; break; }
+    }
+    ix.memo.set(k, ok);
+    return ok;
+  },
+
   score(q, it) {
     if (!it.n) return 0;
     if (it.n === q.n) return 100;

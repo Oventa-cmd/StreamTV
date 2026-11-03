@@ -10,11 +10,12 @@ IPTV-Player für Fire TV / Android TV im Apple-Stil (WebView-App, Oberfläche li
 - **EPG:** laufende Sendung auf jeder Senderkachel; im Player „Jetzt / Danach“ mit Uhrzeit und Fortschritt (Xtream `get_short_epg`, gecacht)
 - **Senderliste im Player:** ◀ öffnet die Sender der aktuellen Kategorie samt EPG; ▲▼ wählen, OK umschalten
 - **Auto-Reconnect:** bricht ein Stream ab oder hängt, verbindet die App still neu (1–30 s Pause, max. 6 Versuche); Serien/Filme laufen an derselben Stelle weiter
-- **Kategorien ausblenden:** Einstellungen → Inhalte; Schnellauswahl nach Sprache/Land (z. B. alle „AR |“-Kategorien), wirkt auf Live-TV, Suche und Serien-Reiter
+- **Kategorien ausblenden:** Einstellungen → Inhalte; Schnellauswahl nach Sprache/Land (z. B. alle „AR |“-Kategorien), wirkt auf Live-TV, Serien, Filme und Suche
 
 **Serien & Filme vom Anbieter**
-- **Reiter „Serien“:** kompletter Xtream-Serienkatalog mit Covern, Kategorie-Chips, Filter; auch große Kataloge (20.000+) laufen flüssig
-- **Filme (VOD):** „Beim Anbieter suchen“ auch für Filme; Film-Reihen unter „Entdecken“
+- **Reiter:** Start · Live-TV · Serien · Filme · Sport · Suche · Einstellungen; jeder Inhalt hat genau einen Platz, ◀ ▶ in der Leiste wechselt den Reiter sofort
+- **Reiter „Serien“ / „Filme“:** oben TMDB-Empfehlungen (nur Titel, die dein Anbieter hat), darunter der komplette Xtream-Katalog (Serien bzw. VOD) mit Covern und Kategorie-Chips; auch große Kataloge (20.000+) laufen flüssig
+- **Suche:** eine Suche für Sender, Serien und Filme des Anbieters
 - **Weiterschauen:** angefangene Folgen und Filme ganz oben auf der Startseite, OK setzt direkt fort (≡ entfernt einen Eintrag)
 - **Intro, Rückblick, Abspann überspringen:** exakte Zeiten aus [TheIntroDB](https://theintrodb.org); fehlt ein Eintrag, lernt die App pro Serie aus dem eigenen Spulverhalten; sonst Faustregel. Im Abspann „Nächste Folge ▶“
 - **Tonspur & Untertitel:** ≡ im Player (HLS); für MKV/MP4 „In anderem Player öffnen“ (z. B. VLC) mit aktueller Position

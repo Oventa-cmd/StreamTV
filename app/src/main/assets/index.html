@@ -15,13 +15,12 @@
   <nav class="tabbar">
     <span class="tab-ind" aria-hidden="true"></span>
     <button class="focusable" data-view="home">Start</button>
-    <button class="focusable" data-view="discover">Entdecken</button>
+    <button class="focusable" data-view="live">Live-TV</button>
     <button class="focusable" data-view="series">Serien</button>
+    <button class="focusable" data-view="movies">Filme</button>
     <button class="focusable" data-view="sport">Sport</button>
-    <button class="focusable" data-view="search">Suche</button>
-    <button class="focusable" data-view="favorites">Favoriten</button>
-    <button class="focusable" data-view="manage">Kanäle</button>
-    <button class="focusable" data-view="settings">Einstellungen</button>
+    <button class="focusable icon" data-view="search" aria-label="Suche"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+    <button class="focusable icon" data-view="settings" aria-label="Einstellungen"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.6 7.6 0 0 0-1.7-1L15 3.3h-4l-.4 2.6a7.6 7.6 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.6 7.6 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.6 7.6 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg></button>
   </nav>
   <div class="status">
     <button class="pill focusable hidden" id="vpnBadge"><span class="dot"></span><span id="vpnText">VPN</span></button>
@@ -39,26 +38,32 @@
       <div class="hero-dots" id="heroDots"></div>
     </div>
     <div id="homeTop"></div>
-    <div id="homeDiscover"></div>
-    <div class="section-label">Live-TV <small id="liveCount"></small></div>
+    <div id="homeRecs"></div>
+  </section>
+
+  <!-- ================= Live-TV ================= -->
+  <section class="view" id="view-live">
+    <div class="pad"><h1 class="large-title">Live-TV <small class="title-count" id="liveCount"></small></h1></div>
     <div class="chips" id="chips"></div>
-    <div id="homeRows"></div>
+    <div id="liveRows"></div>
   </section>
 
-  <!-- ================= Entdecken ================= -->
-  <section class="view" id="view-discover">
-    <div class="pad"><h1 class="large-title">Entdecken</h1></div>
-    <div id="discoverRows"></div>
-  </section>
-
-  <!-- ================= Serien (Katalog des Anbieters) ================= -->
+  <!-- ================= Serien: Empfehlungen + Katalog des Anbieters ================= -->
   <section class="view" id="view-series">
-    <div class="pad">
-      <h1 class="large-title">Serien <small class="title-count" id="serCount"></small></h1>
-      <input id="serQ" class="focusable search" type="search" placeholder="Serien filtern …" autocomplete="off" />
-    </div>
+    <div class="pad"><h1 class="large-title">Serien</h1></div>
+    <div id="serRecs"></div>
+    <div class="section-label cat-label">Alle Serien bei deinem Anbieter <small id="serCount"></small></div>
     <div class="chips" id="serChips"></div>
     <div id="serBody"></div>
+  </section>
+
+  <!-- ================= Filme: Empfehlungen + Katalog des Anbieters ================= -->
+  <section class="view" id="view-movies">
+    <div class="pad"><h1 class="large-title">Filme</h1></div>
+    <div id="movRecs"></div>
+    <div class="section-label cat-label">Alle Filme bei deinem Anbieter <small id="movCount"></small></div>
+    <div class="chips" id="movChips"></div>
+    <div id="movBody"></div>
   </section>
 
   <!-- ================= Sport ================= -->
@@ -76,6 +81,7 @@
       <div class="seg" id="catSeg">
         <button class="sel focusable" data-ckind="live" type="button">Live-TV</button>
         <button class="focusable" data-ckind="series" type="button">Serien</button>
+        <button class="focusable" data-ckind="vod" type="button">Filme</button>
       </div>
       <div id="catBody"></div>
     </div>
@@ -97,16 +103,10 @@
     </div>
   </section>
 
-  <!-- ================= Favoriten ================= -->
-  <section class="view" id="view-favorites">
-    <div class="pad"><h1 class="large-title">Favoriten</h1></div>
-    <div class="grid" id="favGrid"></div>
-  </section>
-
   <!-- ================= Kanäle ================= -->
   <section class="view" id="view-manage">
     <div class="pad settings">
-      <h1 class="large-title">Kanäle</h1>
+      <h1 class="large-title">Kanäle verwalten</h1>
 
       <div class="group-title" id="formTitle">Kanal manuell hinzufügen</div>
       <form class="group" id="chForm">
@@ -190,9 +190,10 @@
       <!-- Inhalte -->
       <div class="group-title">Inhalte</div>
       <div class="group">
+        <button class="row-btn focusable" id="manageOpen" type="button"><span class="lbl"><b>Kanäle verwalten</b><small id="manageOpenSub"></small></span><span class="chev">›</span></button>
         <button class="row-btn focusable" id="catOpen" type="button"><span class="lbl"><b>Kategorien ausblenden</b><small id="catOpenSub"></small></span><span class="chev">›</span></button>
       </div>
-      <p class="group-foot">Blendet unerwünschte Kategorien (z. B. fremdsprachige) in Live-TV, Suche und im Serien-Reiter aus. Favoriten bleiben sichtbar.</p>
+      <p class="group-foot">Blendet unerwünschte Kategorien (z. B. fremdsprachige) in Live-TV, Serien, Filmen und der Suche aus. Favoriten bleiben sichtbar.</p>
 
       <!-- App-Update -->
       <div class="group-title">App-Update</div>
