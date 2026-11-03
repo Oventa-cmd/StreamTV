@@ -83,13 +83,18 @@
 
   <!-- ================= Suche ================= -->
   <section class="view" id="view-search">
-    <div class="pad">
-      <h1 class="large-title">Suche</h1>
-      <input id="q" class="focusable search" type="search" placeholder="Sender, Kategorie, Serie oder Film …" autocomplete="off" />
-      <p class="hint" id="searchInfo"></p>
+    <div class="search-wrap">
+      <div class="kbd-col">
+        <!-- eigene Tastatur statt der Fire-TV-Tastatur: Eingabefeld ist nur Anzeige -->
+        <input id="q" class="search q-display" type="search" placeholder="Suchen …" autocomplete="off" readonly inputmode="none" tabindex="-1" />
+        <div class="kbd" id="kbd"></div>
+      </div>
+      <div class="search-res">
+        <p class="hint" id="searchInfo"></p>
+        <div class="grid" id="searchGrid"></div>
+        <div id="searchShows"></div>
+      </div>
     </div>
-    <div class="grid" id="searchGrid"></div>
-    <div id="searchShows"></div>
   </section>
 
   <!-- ================= Favoriten ================= -->

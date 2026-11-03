@@ -332,8 +332,8 @@ function renderSearch() {
   const q = $('#q').value.trim().toLowerCase();
   const res = q ? visibleChannels().filter(c => (c.name + ' ' + c.group).toLowerCase().includes(q)) : [];
   $('#searchInfo').textContent = q ? `${res.length} Sender` + (res.length > GRID_MAX ? ` – die ersten ${GRID_MAX} werden angezeigt` : '') : '';
-  $('#searchGrid').innerHTML = !q ? `<p class="empty">Sender, Kategorie, Serie oder Film eingeben.</p>`
-    : res.length ? res.slice(0, GRID_MAX).map(tileHTML).join('') : '';
+  $('#searchGrid').innerHTML = !q ? `<p class="empty">Mit der Tastatur links lostippen – Treffer erscheinen sofort.</p>`
+    : res.length ? res.slice(0, GRID_MAX).map(tileHTML).join('') : `<p class="empty">Keine Sender zu „${esc(q)}“.</p>`;
   EPG.scan();
 }
 let searchTimer = null;
@@ -2051,6 +2051,37 @@ document.addEventListener('click', e => {
   }
 });
 $('#q').addEventListener('input', () => { renderSearch(); searchShows(); });
+
+/* ---------- Bildschirmtastatur (wie bei Netflix) ---------- */
+const KBD_KEYS = 'abcdefghijklmnopqrstuvwxyzäöüß1234567890'.split('');
+function renderKbd() {
+  $('#kbd').innerHTML =
+    `<button class="key wide focusable" data-key=" " type="button" aria-label="Leerzeichen">␣ Leer</button>` +
+    `<button class="key wide focusable" data-key="⌫" type="button" aria-label="Löschen">⌫</button>` +
+    KBD_KEYS.map(k => `<button class="key focusable" data-key="${k}" type="button">${k}</button>`).join('') +
+    `<button class="key full focusable" data-key="clear" type="button">Leeren</button>`;
+}
+function kbdInput(k) {
+  const q = $('#q');
+  let v = q.value;
+  if (k === '⌫') v = v.slice(0, -1);
+  else if (k === 'clear') v = '';
+  else if (k === ' ') { if (v && !v.endsWith(' ')) v += ' '; }
+  else if (v.length < 40) v += k;
+  if (v === q.value) return;
+  q.value = v;
+  q.dispatchEvent(new Event('input'));
+}
+renderKbd();
+$('#kbd').addEventListener('click', e => { const b = e.target.closest('[data-key]'); if (b) kbdInput(b.dataset.key); });
+// Hardware-Tastatur (Bluetooth / PC) tippt ebenfalls in die Suche
+document.addEventListener('keydown', e => {
+  if (state.view !== 'search' || playerOpen || sheetOpen || e.ctrlKey || e.altKey || e.metaKey) return;
+  const a = document.activeElement;
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && !a.readOnly) return;
+  if (e.key.length === 1 && /[\p{L}\p{N} .\-']/u.test(e.key)) { e.preventDefault(); kbdInput(e.key === ' ' ? ' ' : e.key.toLowerCase()); }
+  else if (e.key === 'Backspace' && $('#q').value) { e.preventDefault(); kbdInput('⌫'); }
+});
 $('#mq').addEventListener('input', renderManage);
 let serQTimer = null;
 $('#serQ').addEventListener('input', () => { clearTimeout(serQTimer); serQTimer = setTimeout(() => renderSeriesView(true), 280); });
@@ -2339,7 +2370,7 @@ async function importConfig(text) {
     done.push((await addSource(src)) ? `M3U „${src.name}“ hinzugefügt` : `M3U: ${src.error}`);
   }
   // Serien-Watchlist
-  if (cfg.WATCHLIST_EMAIL && cfg.WATCHLIST_PASSWORT && !WL.connected) {
+  if (cfg.WATCHLIST_EMAIL && cfg.WATCHLIST_PASSWORT && (!WL.connected || (WL.s.email || '').toLowerCase() !== cfg.WATCHLIST_EMAIL.trim().toLowerCase())) {
     try { await WL.login(cfg.WATCHLIST_EMAIL, cfg.WATCHLIST_PASSWORT); TM.clear(); loadDiscover(true); done.push('Watchlist angemeldet'); }
     catch (e) { done.push('Watchlist: ' + e.message); }
   }

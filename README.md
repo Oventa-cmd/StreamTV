@@ -35,6 +35,10 @@ IPTV-Player für Fire TV / Android TV im Apple-Stil (WebView-App, Oberfläche li
 - ProtonVPN-Anbindung (Autostart, „nur mit VPN abspielen“)
 - **Update-Hinweis:** prüft höchstens alle 12 h die neueste GitHub-Version und zeigt den ADB-Befehl unter „Einstellungen → App-Update“
 
+## Watchlist-Konto vom PC übertragen
+
+`tools/Watchlist-Anmelden.bat` doppelklicken (ADB nötig): fragt IP, E-Mail und Passwort ab und meldet StreamTV **und** den TV-Launcher an. Das Passwort wird auf dem Fire TV nicht gespeichert, nur die Sitzung.
+
 ## Verbindung zum TV-Launcher
 
 - Deep Links: `streamtv://resume/<Folge>`, `streamtv://title/tv/<TMDB-ID>?play=1[&s=2&e=5]`, `streamtv://title/movie/<ID>?play=1`, `streamtv://sport`
