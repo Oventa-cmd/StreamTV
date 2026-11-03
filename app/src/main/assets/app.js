@@ -334,6 +334,25 @@ function recRowHTML(t, moreView) {
   const more = moreView ? `<div class="tile show more focusable" tabindex="0" data-view="${moreView}"><div class="art"><span>Alle ${moreView === 'movies' ? 'Filme' : 'Serien'} →</span></div><div class="caption">&nbsp;</div></div>` : '';
   return railHTML(t.label, items.join('') + more);
 }
+/* ---------- Watchlist (Serien-Watchlist-Konto): am Schauen zuerst, dann geplant ---------- */
+function wlPicks(type) {
+  if (!WL.connected) return [];
+  const rank = { watching: 0, planned: 1 };
+  return (WL.s.items || []).filter(o => o.status in rank && (o.media_type === 'tv' || o.media_type === 'movie') && (!type || o.media_type === type))
+    .sort((a, b) => rank[a.status] - rank[b.status]
+      || (a.status === 'watching' ? String(b.updated_at || '').localeCompare(String(a.updated_at || '')) : (Number(a.position) || 0) - (Number(b.position) || 0)))
+    .map(o => ({
+      type: o.media_type, id: o.tmdb_id, title: o.title || '', orig: '', backdrop: o.backdrop_path || null, poster: o.poster_path || null,
+      overview: '', year: String((o.meta && o.meta.year) || ''), vote: 0, reason: o.status === 'watching' ? 'Am Schauen' : 'Auf der Watchlist'
+    }));
+}
+function wlRowHTML(type) {
+  const all = wlPicks(type);
+  if (!all.length) return '';
+  const list = all.filter(p => { const m = availMode(p.type); return m === 'all' || (m === 'filter' && XS.has(p)); });
+  if (!list.length) return all.some(p => availMode(p.type) === 'wait') ? railHTML('Meine Watchlist', skeletons(4)) : '';
+  return railHTML('Meine Watchlist', list.map(p => showTileHTML(p)).join(''), list.length);
+}
 function renderRecs() {
   keepFocus(() => {
     if (!TM.key()) {
@@ -345,9 +364,9 @@ function renderRecs() {
       return;
     }
     const tabs = TM.tabs();
-    $('#homeRecs').innerHTML = tabs.filter(t => ['forYou', 'top', 'mTop'].includes(t.id)).map(t => recRowHTML(t, t.type === 'movie' ? 'movies' : 'series')).join('');
-    $('#serRecs').innerHTML = tabs.filter(t => t.type !== 'movie').map(t => recRowHTML(t)).join('');
-    $('#movRecs').innerHTML = tabs.filter(t => t.type === 'movie').map(t => recRowHTML(t)).join('');
+    $('#homeRecs').innerHTML = wlRowHTML() + tabs.filter(t => ['forYou', 'top', 'mTop'].includes(t.id)).map(t => recRowHTML(t, t.type === 'movie' ? 'movies' : 'series')).join('');
+    $('#serRecs').innerHTML = wlRowHTML('tv') + tabs.filter(t => t.type !== 'movie').map(t => recRowHTML(t)).join('');
+    $('#movRecs').innerHTML = wlRowHTML('movie') + tabs.filter(t => t.type === 'movie').map(t => recRowHTML(t)).join('');
   });
 }
 
@@ -1530,12 +1549,23 @@ setInterval(() => {
 window.addEventListener('online', () => { if (playerOpen && (RC.waiting || RC.dead)) retryNow(); });
 window.addEventListener('offline', () => { if (playerOpen && RC.loadPlayed && !vod) setStatus('Keine Internetverbindung …'); });
 function setStatus(t) { $('#status').textContent = t; }
+const osdEl = () => vod ? $('#vosd') : $('#osd');
+const osdShown = () => !osdEl().classList.contains('hide');
 function showOsd() {
-  const o = $('#osd');
+  const o = osdEl();
   if (clistOpen) { o.classList.add('hide'); return; }
   o.classList.remove('hide');
   clearTimeout(osdTimer);
-  osdTimer = setTimeout(() => { o.classList.add('hide'); checkSkip(); }, 4500);
+  if (vod) renderVosd();
+  osdTimer = setTimeout(hideOsdSoon, 4500);
+  checkSkip();
+}
+/** Ausblenden – nicht beim Spulen und (wie bei Netflix) nicht im Pause-Zustand. */
+function hideOsdSoon() {
+  clearTimeout(osdTimer);
+  if (vod && (SC.on || video.paused)) { osdTimer = setTimeout(hideOsdSoon, 4500); return; }
+  osdEl().classList.add('hide');
+  if (vod) { VC.zone = 'bar'; renderVosd(); }
   checkSkip();
 }
 function openPlayer(id) {
@@ -1570,6 +1600,8 @@ function enterPlayer() {
 /* ---------- Serienfolgen (VOD) ---------- */
 function setVod(v) {
   hideSkip();
+  scrubCancel(); VC.zone = 'bar';
+  $('#vosd').classList.add('hide');
   if (vod && vod !== v) settleBurst(true);
   if (vod && vod !== v) saveVodPos();
   vod = v;
@@ -1577,7 +1609,7 @@ function setVod(v) {
   $('#pProg').classList.toggle('hidden', !v);
   if (v) $('#pEpg').classList.add('hidden');
   $('#pFav').classList.toggle('hidden', !!v);
-  $('#pSub').textContent = v ? (v.ep.movie ? '◀▶ Spulen · OK Pause · ≡ Optionen · Zurück schließen' : '◀▶ Spulen · ▲▼ Folge · OK Pause · ≡ Optionen · Zurück')
+  $('#pSub').textContent = v ? '' 
     : '◀ Senderliste · ▲▼ Sender · OK Pause · ≡ Optionen · Zurück';
 }
 /** ctx = Herkunft für „Weiterschauen“: { acc, sid, img, src } */
@@ -1594,6 +1626,8 @@ function openVod(list, idx, show, ctx) {
   $('#pTitle').textContent = ep.movie ? (ctx && ctx.name) || show : `${ep.num}. ${ep.title}`;
   $('#pGroup').textContent = ep.movie ? 'Film' + (ctx && ctx.src ? ' · ' + ctx.src : '') : `${(ctx && ctx.name) || show} · Staffel ${ep.season}`;
   $('#pLogo').textContent = ep.movie ? 'FILM' : `S${ep.season}`;
+  $('#vTitle').innerHTML = ep.movie ? `<b>${esc((ctx && ctx.name) || show)}</b>`
+    : `<b>${esc((ctx && ctx.name) || show)}</b>S${esc(ep.season)}:F${esc(ep.num)} „${esc(ep.title)}“`;
   updateProg();
   loadStream(ep.url);
   showOsd();
@@ -1654,7 +1688,7 @@ function hideSkip() {
 function checkSkip() {
   if (!vod || menuOpen || !vod.segReady) return;
   const t = video.currentTime || 0;
-  const osdOn = vod.touched && !$('#osd').classList.contains('hide') && !video.paused;
+  const osdOn = vod.touched && osdShown() && !video.paused;
   const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind] && (!s.osd || osdOn)).sort((a, b) => b.from - a.from)[0] || null;
   if (cur && skipSeg !== cur) showSkip(cur);
   else if (!cur && skipSeg) hideSkip();
@@ -1759,10 +1793,121 @@ function hideResume(id) {
 }
 function updateProg() {
   if (!vod) return;
+  renderVosd();
   const d = isFinite(video.duration) ? video.duration : 0, t = video.currentTime || 0;
   $('#pBar').style.width = d ? (t / d * 100).toFixed(2) + '%' : '0';
   $('#pTime').textContent = d ? `${fmtTime(t)} / ${fmtTime(d)}` : '';
 }
+/* ---------- Netflix-Bedienung: Leiste, Vorschau-Spulen, Tastenreihe ---------- */
+const VC = { zone: 'bar', sel: 0 };
+const SC = { on: false, pos: 0, from: 0, holdStart: 0, last: 0, t: null };
+function vButtons() {
+  const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length;
+  $('#vNext').classList.toggle('hidden', !next);
+  return $$('#vosd .vb').filter(b => !b.classList.contains('hidden'));
+}
+function renderVosd() {
+  if (!vod) return;
+  const o = $('#vosd'), d = isFinite(video.duration) ? video.duration : 0, cur = video.currentTime || 0;
+  const t = SC.on ? SC.pos : cur, pct = x => d ? Math.max(0, Math.min(100, x / d * 100)).toFixed(2) + '%' : '0';
+  o.classList.toggle('scrub', SC.on);
+  o.classList.toggle('zbar', VC.zone === 'bar');
+  o.classList.toggle('paused', video.paused && !SC.on);
+  $('#vFill').style.width = pct(SC.on ? Math.min(t, cur) : t);
+  $('#vGhost').style.width = SC.on ? pct(Math.max(t, cur)) : '0';
+  $('#vKnob').style.left = pct(t);
+  $('#vRem').textContent = d ? fmtTime(Math.max(0, d - t)) : '';
+  if (SC.on) {
+    const delta = Math.round(t - SC.from);
+    $('#vBubble').innerHTML = `${fmtTime(t)}<small>${delta >= 0 ? '+' : '−'}${fmtTime(Math.abs(delta))}</small>`;
+  }
+  $('#vCenter').textContent = video.paused && !SC.on && d ? '❚❚' : '';
+  $('#vPlay').innerHTML = video.paused ? '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg>'
+    : '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z" fill="currentColor"/></svg>';
+  const btns = vButtons();
+  if (VC.sel >= btns.length) VC.sel = btns.length - 1;
+  btns.forEach((b, i) => b.classList.toggle('sel', VC.zone === 'btns' && i === VC.sel));
+}
+/** ◀▶: kurz = 10 s, gedrückt halten = immer schneller. Gesprungen wird erst beim Loslassen. */
+function scrubKey(dir, e) {
+  const d = video.duration;
+  if (!vod || !isFinite(d)) return;
+  const now = performance.now();
+  const held = SC.on && !!e && (e.repeat || now - SC.last < 160);
+  if (!SC.on) { SC.on = true; SC.from = SC.pos = video.currentTime || 0; }
+  if (!held) { SC.pos += dir * 10; SC.holdStart = now; }
+  else {
+    const h = now - SC.holdStart, dt = Math.min(0.25, (now - SC.last) / 1000);
+    const vel = h < 1200 ? 30 : h < 3000 ? 90 : Math.max(240, d / 40);   // Sekunden pro Sekunde
+    SC.pos += dir * vel * dt;
+  }
+  SC.last = now;
+  SC.pos = Math.max(0, Math.min(d - 2, SC.pos));
+  clearTimeout(SC.t);
+  SC.t = setTimeout(scrubCommit, 800);
+  renderVosd();
+}
+function scrubCommit() {
+  clearTimeout(SC.t);
+  if (!SC.on) return;
+  SC.on = false;
+  if (vod && isFinite(video.duration) && Math.abs(SC.pos - (video.currentTime || 0)) > 0.5) {
+    const from = SC.from;
+    video.currentTime = SC.pos;
+    noteSeek(from, SC.pos);
+  }
+  renderVosd();
+  if (vod) showOsd();
+}
+function scrubCancel() { clearTimeout(SC.t); SC.on = false; }
+function vodButton(id) {
+  if (id === 'play') togglePlay();
+  else if (id === 'rew') seek(-10);
+  else if (id === 'fwd') seek(10);
+  else if (id === 'next') { zap(1); return; }
+  else if (id === 'menu') { openMenu(); return; }
+  setTimeout(renderVosd, 50);
+}
+/** Tasten im Serien-/Film-Player. true = verarbeitet. */
+function vodKey(e) {
+  const k = e.key, shown = osdShown();
+  if (k === 'MediaPlayPause') { togglePlay(); showOsd(); return true; }
+  if (k === 'MediaRewind' || k === 'MediaFastForward') { VC.zone = 'bar'; scrubKey(k === 'MediaRewind' ? -1 : 1, e); showOsd(); return true; }
+  if (['ChannelUp', 'PageUp', 'ChannelDown', 'PageDown'].includes(k)) { zap(k === 'ChannelUp' || k === 'PageUp' ? -1 : 1); return true; }
+  if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k) && SC.on) { scrubCancel(); renderVosd(); showOsd(); return true; }
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' '].includes(k)) return false;
+  // Ausgeblendet: ◀▶ spult sofort, OK pausiert, ▲▼ blendet ein
+  if (!shown) {
+    VC.zone = 'bar';
+    if (k === 'ArrowLeft' || k === 'ArrowRight') scrubKey(k === 'ArrowLeft' ? -1 : 1, e);
+    else if (k === 'Enter' || k === ' ') togglePlay();
+    showOsd();
+    return true;
+  }
+  if (VC.zone === 'bar') {
+    if (k === 'ArrowLeft' || k === 'ArrowRight') scrubKey(k === 'ArrowLeft' ? -1 : 1, e);
+    else if (k === 'Enter' || k === ' ') { if (SC.on) scrubCommit(); else togglePlay(); }
+    else if (k === 'ArrowDown') { scrubCommit(); VC.zone = 'btns'; VC.sel = 0; }
+  } else {
+    const btns = vButtons();
+    if (k === 'ArrowLeft') VC.sel = Math.max(0, VC.sel - 1);
+    else if (k === 'ArrowRight') VC.sel = Math.min(btns.length - 1, VC.sel + 1);
+    else if (k === 'ArrowUp') VC.zone = 'bar';
+    else if (k === 'Enter' || k === ' ') { const b = btns[VC.sel]; if (b) vodButton(b.dataset.vb); }
+  }
+  showOsd();
+  return true;
+}
+$('#vosd').addEventListener('click', e => { e.stopPropagation(); const b = e.target.closest('[data-vb]'); if (b) vodButton(b.dataset.vb); else showOsd(); });
+$('#vBar').addEventListener('click', e => {
+  e.stopPropagation();
+  const r = $('#vBar').getBoundingClientRect(), d = video.duration;
+  if (!vod || !isFinite(d)) return;
+  const from = video.currentTime, to = Math.max(0, Math.min(d - 2, (e.clientX - r.left) / r.width * d));
+  video.currentTime = to; noteSeek(from, to); renderVosd(); showOsd();
+});
+video.addEventListener('play', () => { if (vod) renderVosd(); });
+video.addEventListener('pause', () => { if (vod) { renderVosd(); showOsd(); } });
 function seek(sec) {
   if (!vod || !isFinite(video.duration)) return;
   const from = video.currentTime;
@@ -1849,7 +1994,11 @@ function playerKey(e) {
   if (!vod && currentId && k === 'ArrowLeft') { e.preventDefault(); openClist(); return; }
   // Faustregel-Intro (Zeitpunkt unbekannt): ⏩ überspringt, OK bleibt Pause
   if (skipSeg && skipSeg.osd && k === 'MediaFastForward') { e.preventDefault(); doSkip(); return; }
-  if (skipKind && !skipSeg.osd && ['Enter', ' '].includes(k)) { e.preventDefault(); doSkip(); return; }
+  if (skipKind && !skipSeg.osd && ['Enter', ' '].includes(k) && !(vod && (SC.on || (osdShown() && VC.zone === 'btns')))) { e.preventDefault(); doSkip(); return; }
+  if (vod && k !== 'ContextMenu' && k !== 'm' && k !== 'M') {
+    if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k) && !SC.on) { e.preventDefault(); closePlayer(); return; }
+    if (vodKey(e)) { e.preventDefault(); vod && (vod.touched = true); checkSkip(); return; }
+  }
   if (k === 'ContextMenu' || k === 'm' || k === 'M') { e.preventDefault(); openMenu(); return; }
   if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k)) { e.preventDefault(); closePlayer(); return; }
   if (vod && ['ArrowLeft', 'MediaRewind'].includes(k)) seek(k === 'MediaRewind' ? -30 : -10);
@@ -2030,7 +2179,7 @@ function openMenu() {
   menuOpen = true;
   pushOverlay('pmenu');
   $('#pMenu').classList.remove('hidden');
-  $('#osd').classList.add('hide');
+  $('#osd').classList.add('hide'); $('#vosd').classList.add('hide');
   renderMenu();
 }
 function closeMenu(fromPop) {

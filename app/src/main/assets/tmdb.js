@@ -64,7 +64,7 @@ const WL = {
     if (!this.connected) return;
     if (!force && Date.now() - (this.s.loadedAt || 0) < 60000) return;
     if (!await this.ensureToken()) return;
-    const r = await this.http('GET', '/rest/v1/items?select=media_type,tmdb_id,title,status,rating,position,updated_at');
+    const r = await this.http('GET', '/rest/v1/items?select=media_type,tmdb_id,title,status,rating,position,updated_at,poster_path,backdrop_path,meta');
     if (r.status < 200 || r.status > 299) return;
     this.s.items = JSON.parse(r.text);
     this.s.loadedAt = Date.now();
@@ -333,7 +333,8 @@ const TM = {
       const p = (this.cache[id].items || []).find(x => x.type + ':' + x.id === key);
       if (p) return p;
     }
-    return (this.searchRes || []).find(x => x.type + ':' + x.id === key) || (this.extra || []).find(x => x.type + ':' + x.id === key) || null;
+    return (this.searchRes || []).find(x => x.type + ':' + x.id === key) || (this.extra || []).find(x => x.type + ':' + x.id === key)
+      || (typeof wlPicks === 'function' ? wlPicks().find(x => x.type + ':' + x.id === key) : null) || null;
   },
   async search(q) {
     const j = await this.get('/search/multi', { query: q, include_adult: 'false' });
