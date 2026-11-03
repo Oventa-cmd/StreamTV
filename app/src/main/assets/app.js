@@ -995,22 +995,83 @@ function startEngine(name, url, fail) {
     safePlay(video);
   }
 }
-function loadStream(url) {
+/* ---------- Auto-Reconnect ---------- */
+// Bricht ein laufender Stream ab (Fehler, Hänger, Netz weg), wird still neu verbunden –
+// mit wachsenden Pausen; Serien/Filme setzen an derselben Stelle fort.
+const RC = { url: '', played: false, loadPlayed: false, tries: 0, rounds: 0, eng: null, timer: null, waiting: false, dead: false,
+  resumeAt: 0, lastT: -1, lastMove: 0, MAX: 6, WAIT: [1, 2, 4, 8, 15, 30], STALL: 15000 };
+function loadStream(url, keep) {
   if (menuOpen) closeMenu();
+  clearTimeout(RC.timer);
+  RC.waiting = false; RC.dead = false;
+  if (!keep) Object.assign(RC, { url, played: false, tries: 0, rounds: 0, eng: null, resumeAt: 0 });
+  RC.loadPlayed = false; RC.lastT = -1; RC.lastMove = Date.now();
   stopStream();
   const token = ++playToken;
-  const list = enginesFor(url);
+  let list = enginesFor(url);
+  if (keep && RC.eng) list = [RC.eng, ...list.filter(x => x !== RC.eng)];   // zuerst die Engine, die schon lief
   const next = () => {
     if (token !== playToken) return;
     const e = list.shift();
     stopStream();
-    if (!e) { setStatus('Stream nicht abspielbar'); return; }
+    if (!e) return streamFailed(url);
     let done = false;
-    startEngine(e, url, () => { if (!done && token === playToken) { done = true; next(); } });
+    startEngine(e, url, () => {
+      if (done || token !== playToken) return;
+      done = true;
+      if (RC.loadPlayed) return reconnect('Verbindung unterbrochen');   // lief schon → neu verbinden statt Engine wechseln
+      next();
+    });
   };
-  setStatus('Lädt …');
+  if (!keep) setStatus('Lädt …');
   next();
 }
+/** Keine Engine konnte starten. */
+function streamFailed(url) {
+  if (RC.played) return reconnect('Verbindung unterbrochen');
+  if (RC.rounds < 1) {   // z. B. Anbieter meldet kurz „max. Verbindungen“ beim schnellen Umschalten
+    RC.rounds++;
+    setStatus('Erneuter Versuch …');
+    const tok = playToken;
+    RC.timer = setTimeout(() => { if (playerOpen && tok === playToken && RC.url === url) loadStream(url, true); }, 2000);
+    return;
+  }
+  stopStream();
+  RC.dead = true;
+  setStatus('Stream nicht abspielbar – OK für neuen Versuch');
+}
+function reconnect(reason) {
+  if (!playerOpen || !RC.url || RC.waiting) return;
+  const n = ++RC.tries;
+  if (vod && video.currentTime > 1) RC.resumeAt = video.currentTime;
+  playToken++;   // laufende Versuche abbrechen
+  stopStream();
+  if (n > RC.MAX) { RC.dead = true; setStatus('Verbindung verloren – OK für neuen Versuch'); return; }
+  const wait = RC.WAIT[Math.min(n, RC.WAIT.length) - 1] * 1000, url = RC.url, tok = playToken;
+  RC.waiting = true;
+  setStatus(`${reason} – neuer Versuch in ${wait / 1000} s (${n}/${RC.MAX})`);
+  RC.timer = setTimeout(() => {
+    if (!playerOpen || tok !== playToken || RC.url !== url) return;
+    setStatus('Verbinde neu …');
+    loadStream(url, true);
+  }, wait);
+}
+function retryNow() {
+  if (!RC.url) return;
+  clearTimeout(RC.timer);
+  RC.tries = 0; RC.rounds = 0;
+  setStatus('Verbinde neu …');
+  loadStream(RC.url, true);
+}
+// Hänger erkennen: Wiedergabe läuft, aber die Zeit bewegt sich nicht mehr
+setInterval(() => {
+  if (!playerOpen || !RC.loadPlayed || RC.waiting || RC.dead || video.paused || video.seeking && vod) return;
+  const t = video.currentTime;
+  if (t !== RC.lastT) { RC.lastT = t; RC.lastMove = Date.now(); return; }
+  if (Date.now() - RC.lastMove > RC.STALL) reconnect('Stream hängt');
+}, 1000);
+window.addEventListener('online', () => { if (playerOpen && (RC.waiting || RC.dead)) retryNow(); });
+window.addEventListener('offline', () => { if (playerOpen && RC.loadPlayed && !vod) setStatus('Keine Internetverbindung …'); });
 function setStatus(t) { $('#status').textContent = t; }
 function showOsd() {
   const o = $('#osd');
@@ -1292,6 +1353,7 @@ function closePlayer(fromPop) {
   setVod(null);
   playerOpen = false;
   playToken++;
+  clearTimeout(RC.timer); RC.waiting = false; RC.dead = false; RC.url = '';
   stopStream();
   setStatus('');
   $('#player').classList.remove('open');
@@ -1329,14 +1391,21 @@ function playerKey(e) {
   else if (vod && ['ArrowRight', 'MediaFastForward'].includes(k)) seek(k === 'MediaFastForward' ? 30 : 10);
   else if (['ArrowUp', 'ChannelUp', 'PageUp'].includes(k)) zap(-1);
   else if (['ArrowDown', 'ChannelDown', 'PageDown'].includes(k)) zap(1);
-  else if (['Enter', ' ', 'MediaPlayPause'].includes(k)) togglePlay();
+  else if (['Enter', ' ', 'MediaPlayPause'].includes(k)) { if (RC.dead || RC.waiting) retryNow(); else togglePlay(); }
   else if (['f', 'F'].includes(k)) toggleFav(currentId);
   else return;
   e.preventDefault();
   showOsd();
 }
-video.addEventListener('waiting', () => { if (engine) setStatus('Puffern …'); });
-video.addEventListener('playing', () => { clearTimeout(startTimer); setStatus(''); });
+video.addEventListener('waiting', () => { if (engine && !RC.waiting) setStatus('Puffern …'); });
+video.addEventListener('playing', () => {
+  clearTimeout(startTimer); setStatus('');
+  RC.played = RC.loadPlayed = true; RC.eng = engine; RC.tries = 0; RC.rounds = 0; RC.dead = false; RC.lastMove = Date.now();
+});
+video.addEventListener('loadedmetadata', () => {   // nach Reconnect an derselben Stelle weiter
+  if (vod && RC.resumeAt > 1 && isFinite(video.duration)) { video.currentTime = Math.min(RC.resumeAt, video.duration - 3); RC.resumeAt = 0; }
+});
+video.addEventListener('ended', () => { if (!vod && playerOpen && RC.loadPlayed) reconnect('Stream beendet'); });
 video.addEventListener('error', () => { if (engine === 'native' && failCb) failCb(); });
 $('#player').addEventListener('click', e => { if (!e.target.closest('#osd')) { togglePlay(); showOsd(); } });
 
@@ -1772,7 +1841,7 @@ function vpnOnStart() {
     setTimeout(() => { const w = vpn(); if (w && !w.active) bridge.openVpn(); }, 1500);
   }
 }
-window.onAppResume = () => { renderVpn(); setTimeout(renderVpn, 2500); };
+window.onAppResume = () => { renderVpn(); setTimeout(renderVpn, 2500); if (playerOpen && (RC.waiting || RC.dead)) retryNow(); };
 
 /* ================= Update-Hinweis (GitHub-Releases) ================= */
 const UPD = {
