@@ -1565,7 +1565,7 @@ function hideOsdSoon() {
   clearTimeout(osdTimer);
   if (vod && (SC.on || video.paused)) { osdTimer = setTimeout(hideOsdSoon, 4500); return; }
   osdEl().classList.add('hide');
-  if (vod) { VC.zone = 'bar'; renderVosd(); }
+  if (vod) { VC.zone = skipKind && !skipSeg.osd ? 'skip' : 'bar'; renderVosd(); }
   checkSkip();
 }
 function openPlayer(id) {
@@ -1677,6 +1677,8 @@ function showSkip(seg) {
     : next ? 'Nächste Folge <span>▶</span>' : 'Abspann überspringen <span>⏭</span>';
   b.dataset.src = seg.src;
   b.classList.remove('hidden');
+  if (vod && VC.zone !== 'btns' && !SC.on) VC.zone = 'skip';
+  if (vod) renderVosd();
   clearTimeout(skipTimer);
   if (seg.timeout) skipTimer = setTimeout(() => { if (vod) vod.used[seg.kind] = true; hideSkip(); }, seg.timeout);
 }
@@ -1684,6 +1686,7 @@ function hideSkip() {
   clearTimeout(skipTimer);
   skipKind = null; skipSeg = null;
   $('#pSkip').classList.add('hidden');
+  if (typeof VC !== 'undefined' && VC.zone === 'skip') { VC.zone = 'bar'; if (vod) renderVosd(); }
 }
 function checkSkip() {
   if (!vod || menuOpen || !vod.segReady) return;
@@ -1827,6 +1830,7 @@ function renderVosd() {
   const btns = vButtons();
   if (VC.sel >= btns.length) VC.sel = btns.length - 1;
   btns.forEach((b, i) => b.classList.toggle('sel', VC.zone === 'btns' && i === VC.sel));
+  $('#pSkip').classList.toggle('sel', VC.zone === 'skip' && !!skipKind);
 }
 /** ◀▶: kurz = 10 s, gedrückt halten = immer schneller. Gesprungen wird erst beim Loslassen. */
 function scrubKey(dir, e) {
@@ -1856,6 +1860,7 @@ function scrubCommit() {
     video.currentTime = SC.pos;
     noteSeek(from, SC.pos);
   }
+  if (skipKind && VC.zone === 'bar') VC.zone = 'skip';
   renderVosd();
   if (vod) showOsd();
 }
@@ -1877,6 +1882,14 @@ function vodKey(e) {
   if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k) && SC.on) { scrubCancel(); renderVosd(); showOsd(); return true; }
   if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' '].includes(k)) return false;
   // Ausgeblendet: ◀▶ spult sofort, OK pausiert, ▲▼ blendet ein
+  if (VC.zone === 'skip' && !skipKind) VC.zone = 'bar';
+  if (VC.zone === 'skip') {   // „Intro überspringen“ ist ausgewählt
+    if (k === 'ArrowLeft' || k === 'ArrowRight') { VC.zone = 'bar'; scrubKey(k === 'ArrowLeft' ? -1 : 1, e); }
+    else if (k === 'ArrowDown') VC.zone = shown ? 'btns' : 'bar';
+    if (k === 'ArrowDown' && VC.zone === 'btns') VC.sel = 0;
+    showOsd();
+    return true;
+  }
   if (!shown) {
     VC.zone = 'bar';
     if (k === 'ArrowLeft' || k === 'ArrowRight') scrubKey(k === 'ArrowLeft' ? -1 : 1, e);
@@ -1888,11 +1901,12 @@ function vodKey(e) {
     if (k === 'ArrowLeft' || k === 'ArrowRight') scrubKey(k === 'ArrowLeft' ? -1 : 1, e);
     else if (k === 'Enter' || k === ' ') { if (SC.on) scrubCommit(); else togglePlay(); }
     else if (k === 'ArrowDown') { scrubCommit(); VC.zone = 'btns'; VC.sel = 0; }
+    else if (k === 'ArrowUp' && skipKind && !SC.on) VC.zone = 'skip';
   } else {
     const btns = vButtons();
     if (k === 'ArrowLeft') VC.sel = Math.max(0, VC.sel - 1);
     else if (k === 'ArrowRight') VC.sel = Math.min(btns.length - 1, VC.sel + 1);
-    else if (k === 'ArrowUp') VC.zone = 'bar';
+    else if (k === 'ArrowUp') VC.zone = skipKind ? 'skip' : 'bar';
     else if (k === 'Enter' || k === ' ') { const b = btns[VC.sel]; if (b) vodButton(b.dataset.vb); }
   }
   showOsd();
@@ -1994,7 +2008,7 @@ function playerKey(e) {
   if (!vod && currentId && k === 'ArrowLeft') { e.preventDefault(); openClist(); return; }
   // Faustregel-Intro (Zeitpunkt unbekannt): ⏩ überspringt, OK bleibt Pause
   if (skipSeg && skipSeg.osd && k === 'MediaFastForward') { e.preventDefault(); doSkip(); return; }
-  if (skipKind && !skipSeg.osd && ['Enter', ' '].includes(k) && !(vod && (SC.on || (osdShown() && VC.zone === 'btns')))) { e.preventDefault(); doSkip(); return; }
+  if (skipKind && ['Enter', ' '].includes(k) && (!vod || VC.zone === 'skip')) { e.preventDefault(); doSkip(); return; }
   if (vod && k !== 'ContextMenu' && k !== 'm' && k !== 'M') {
     if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k) && !SC.on) { e.preventDefault(); closePlayer(); return; }
     if (vodKey(e)) { e.preventDefault(); vod && (vod.touched = true); checkSkip(); return; }

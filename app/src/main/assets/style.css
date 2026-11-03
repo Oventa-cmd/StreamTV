@@ -318,7 +318,9 @@ video::cue{background:rgba(0,0,0,.65);font-family:Inter,sans-serif;font-size:1.0
 /* ---------- Intro / Abspann überspringen ---------- */
 .skip{position:absolute;right:var(--pad);bottom:2rem;z-index:2;display:inline-flex;align-items:center;gap:.6rem;padding:.85rem 1.5rem;border-radius:999px;
   font-weight:700;font-size:1rem;background:#fff;color:#000;box-shadow:0 0 0 3px rgba(255,255,255,.35),0 14px 40px rgba(0,0,0,.6);
-  animation:skipIn .35s var(--ease);transition:bottom .45s var(--ease)}
+  animation:skipIn .35s var(--ease);transition:bottom .45s var(--ease),transform .25s var(--spring),background .2s,color .2s}
+#player.vod .skip{background:rgba(30,30,32,.78);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.35),0 14px 40px rgba(0,0,0,.6)}
+#player.vod .skip.sel{background:#fff;color:#000;transform:scale(1.08);box-shadow:0 0 0 3px rgba(255,255,255,.45),0 14px 40px rgba(0,0,0,.6)}
 .skip span{font-size:.9rem}
 #osd:not(.hide) ~ .skip{bottom:10.4rem}
 @keyframes skipIn{from{opacity:0;transform:translateY(.8rem) scale(.96)}to{opacity:1;transform:none}}
