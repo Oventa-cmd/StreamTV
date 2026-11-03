@@ -949,6 +949,7 @@ function enterPlayer() {
 /* ---------- Serienfolgen (VOD) ---------- */
 function setVod(v) {
   hideSkip();
+  if (vod && vod !== v) settleBurst(true);
   if (vod && vod !== v) saveVodPos();
   vod = v;
   $('#player').classList.toggle('vod', !!v);
@@ -967,7 +968,7 @@ function openVod(list, idx, show, ctx) {
     if (v && v.installed && !v.active) { toast('Kein VPN – ProtonVPN wird geöffnet'); setTimeout(() => bridge.openVpn(), 900); return; }
   }
   enterPlayer();
-  setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false, synced: false });
+  setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false, synced: false, segs: [], segReady: false, used: {}, burst: null });
   currentId = null;
   $('#pTitle').textContent = ep.movie ? (ctx && ctx.name) || show : `${ep.num}. ${ep.title}`;
   $('#pGroup').textContent = ep.movie ? 'Film' + (ctx && ctx.src ? ' · ' + ctx.src : '') : `${(ctx && ctx.name) || show} · Staffel ${ep.season}`;
@@ -984,48 +985,105 @@ function saveVodPos(asDone) {
     show: (c && c.name) || vod.show, movie: !!e.movie, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || '', tmdb: c.tmdb || ''
   } : null);
 }
-/* ---------- Intro / Abspann überspringen ---------- */
+/* ---------- Intro, Rückblick, Abspann überspringen ---------- */
+// Quellen: TheIntroDB → selbst gelernt pro Serie → Faustregel (siehe skip.js)
 const INTRO_WINDOW = 300, INTRO_SKIP = 85, INTRO_SHOW = 10000;
-let skipKind = null, skipTimer = null;
+let skipKind = null, skipSeg = null, skipTimer = null, skipShownAt = 0;
 const outroLen = d => Math.max(60, Math.min(150, d * 0.04));
-function showSkip(kind) {
+/** Schlüssel zum Lernen: TMDB-Serie, sonst Anbieter-Serie. */
+const serKey = v => !v || v.ep.movie ? null : v.ctx && v.ctx.tmdb ? v.ctx.tmdb : v.ctx && v.ctx.acc ? 'xs:' + v.ctx.acc + '|' + v.ctx.sid : 'show:' + v.show;
+async function loadSegments(v) {
+  const d = video.duration;
+  if (!isFinite(d) || d <= 0) return;
+  const t = v.ctx && v.ctx.tmdb ? String(v.ctx.tmdb).split(':') : null;
+  const db = t && Number(t[1]) > 0 ? await SK.fromDb(t[0] === 'movie' ? 'movie' : 'tv', Number(t[1]), v.ep.season, v.ep.num, d) : null;
+  if (vod !== v) return;
+  const L = SK.learned(serKey(v)), segs = [];
+  if (db && db.recap && db.recap.e) segs.push({ kind: 'recap', from: db.recap.s, to: db.recap.e, target: db.recap.e, src: 'db' });
+  if (db && db.intro) segs.push({ kind: 'intro', from: db.intro.s, to: db.intro.e || d, target: db.intro.e || d, src: 'db' });
+  else if (!v.ep.movie && L.intro) segs.push({ kind: 'intro', from: Math.max(0, L.intro.s - 10), to: L.intro.e, target: L.intro.e, src: 'learn' });
+  else if (!v.ep.movie && d > 180) segs.push({ kind: 'intro', from: 0, to: Math.min(INTRO_WINDOW, d * 0.3), target: null, timeout: INTRO_SHOW, src: 'auto' });
+  if (db && db.credits) {
+    const post = db.credits.e && db.credits.e < d - 10;   // Szene nach dem Abspann
+    segs.push({ kind: 'outro', from: db.credits.s, to: post ? db.credits.e : d, target: post ? db.credits.e : null, src: 'db' });
+  } else if (L.outro && !v.ep.movie && L.outro < d * 0.5) segs.push({ kind: 'outro', from: d - L.outro, to: d, target: null, src: 'learn' });
+  else if (d > 120) segs.push({ kind: 'outro', from: d - outroLen(d), to: d, target: null, src: 'auto' });
+  v.segs = segs; v.segReady = true;
+  checkSkip();
+}
+function showSkip(seg) {
   const b = $('#pSkip');
-  skipKind = kind;
-  const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length;
-  b.innerHTML = kind === 'intro' ? 'Intro überspringen <span>⏭</span>' : next ? 'Nächste Folge <span>▶</span>' : 'Abspann überspringen <span>⏭</span>';
+  skipSeg = seg; skipKind = seg.kind; skipShownAt = Date.now();
+  const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length && seg.target == null;
+  b.innerHTML = seg.kind === 'intro' ? 'Intro überspringen <span>⏭</span>'
+    : seg.kind === 'recap' ? 'Rückblick überspringen <span>⏭</span>'
+    : next ? 'Nächste Folge <span>▶</span>' : 'Abspann überspringen <span>⏭</span>';
+  b.dataset.src = seg.src;
   b.classList.remove('hidden');
   clearTimeout(skipTimer);
-  if (kind === 'intro') skipTimer = setTimeout(hideSkip, INTRO_SHOW);
+  if (seg.timeout) skipTimer = setTimeout(() => { if (vod) vod.used[seg.kind] = true; hideSkip(); }, seg.timeout);
 }
 function hideSkip() {
   clearTimeout(skipTimer);
-  skipKind = null;
+  skipKind = null; skipSeg = null;
   $('#pSkip').classList.add('hidden');
 }
 function checkSkip() {
-  if (!vod || menuOpen) return;
-  const t = video.currentTime || 0, d = isFinite(video.duration) ? video.duration : 0;
-  if (!vod.introSeen && !vod.ep.movie && t >= 1) {
-    vod.introSeen = true;
-    if (t < INTRO_WINDOW && (!d || d > 180)) showSkip('intro');
-  }
-  if (d > 120) {
-    const inOutro = d - t <= outroLen(d);
-    if (inOutro && skipKind !== 'outro' && !vod.outroDismissed) showSkip('outro');
-    else if (!inOutro && skipKind === 'outro') hideSkip();
-  }
+  if (!vod || menuOpen || !vod.segReady) return;
+  const t = video.currentTime || 0;
+  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind]).sort((a, b) => b.from - a.from)[0] || null;
+  if (cur && skipSeg !== cur) showSkip(cur);
+  else if (!cur && skipSeg) hideSkip();
+}
+function seekTo(abs) {
+  if (!vod || !isFinite(video.duration)) return;
+  video.currentTime = Math.max(0, Math.min(video.duration - 2, abs));
+  updateProg();
+}
+/** Spulen merken, um daraus das Intro einer Serie zu lernen. */
+function noteSeek(from, to, src) {
+  if (!vod || vod.ep.movie) return;
+  const b = vod.burst, win = b && b.src !== 'user' ? 15000 : 4000;
+  if (b && Date.now() - b.at < win) { b.to = to; b.at = Date.now(); if (!src) b.adjusted = true; }
+  else vod.burst = { from, to, at: Date.now(), src: src || 'user', adjusted: false };
+}
+function settleBurst(force) {
+  const b = vod && vod.burst;
+  if (!b || (!force && Date.now() - b.at < SK.SETTLE)) return;
+  vod.burst = null;
+  const dbIntro = (vod.segs || []).some(s => s.kind === 'intro' && s.src === 'db');
+  const net = b.to - b.from;
+  const d = isFinite(video.duration) ? video.duration : 0;
+  // Intro: 30 s bis 3 Min. Sprung, Ende in den ersten 15 Min. und im ersten Drittel der Folge
+  if (dbIntro || !d || net < 30 || net > 180 || b.to > Math.min(900, d * 0.3)) return;
+  if (b.src === 'user' || b.adjusted) SK.learnIntro(serKey(vod), b.from, b.to);
+}
+/** Am Ende abgebrochen bzw. zur nächsten Folge gesprungen → Abspann-Beginn lernen. */
+function noteOutro(v) {
+  if (!v || v.ep.movie || !isFinite(video.duration)) return;
+  const d = video.duration, P = video.currentTime || 0, off = d - P;
+  if ((v.segs || []).some(s => s.kind === 'outro' && s.src === 'db')) return;
+  if (P / d >= 0.85 && off >= 15 && off <= 600) SK.learnOutro(serKey(v), off);
 }
 function doSkip() {
-  const kind = skipKind;
+  const seg = skipSeg;
   hideSkip();
-  if (!vod) return;
-  if (kind === 'intro') { seek(INTRO_SKIP); showOsd(); return; }
-  // Abspann: als gesehen werten, dann weiter
+  if (!vod || !seg) return;
+  vod.used[seg.kind] = true;
+  if (seg.kind !== 'outro' || seg.target != null) {
+    const from = video.currentTime || 0, to = seg.target != null ? seg.target : from + INTRO_SKIP;
+    seekTo(to);
+    if (seg.kind === 'intro' && seg.src !== 'db') noteSeek(from, to, 'btn');
+    showOsd();
+    return;
+  }
+  // Abspann: zu spät erschienener Button → tatsächlichen Beginn lernen
+  if (seg.src !== 'db' && Date.now() - skipShownAt > 5000) noteOutro(vod);
   vod.doneMark = true;
   saveVodPos(true);
   if (!vod.synced) syncWatched(vod);
-  if (!vod.ep.movie && vod.idx + 1 < vod.list.length) { const v = vod; v.outroDismissed = true; openVod(v.list, v.idx + 1, v.show, v.ctx); }
-  else { vod.outroDismissed = true; closePlayer(); }
+  if (!vod.ep.movie && vod.idx + 1 < vod.list.length) { const v = vod; openVod(v.list, v.idx + 1, v.show, v.ctx); }
+  else closePlayer();
 }
 $('#pSkip').addEventListener('click', e => { e.stopPropagation(); doSkip(); });
 
@@ -1083,7 +1141,9 @@ function updateProg() {
 }
 function seek(sec) {
   if (!vod || !isFinite(video.duration)) return;
+  const from = video.currentTime;
   video.currentTime = Math.max(0, Math.min(video.duration - 2, video.currentTime + sec));
+  noteSeek(from, video.currentTime);
   updateProg();
 }
 video.addEventListener('loadedmetadata', () => applyTrackPref());
@@ -1092,6 +1152,8 @@ if (video.audioTracks) video.audioTracks.addEventListener('addtrack', () => appl
 video.addEventListener('loadedmetadata', () => {
   if (!vod || vod.resumed) return;
   vod.resumed = true;
+  const v0 = vod;
+  setTimeout(() => { if (vod === v0 && !v0.segReady) loadSegments(v0); }, 0);
   const v = VP.get(vod.ep.id);
   if (v && v.pos > 30 && !VP.done(vod.ep.id) && isFinite(video.duration)) {
     video.currentTime = v.pos;
@@ -1104,6 +1166,7 @@ video.addEventListener('timeupdate', () => {
   updateProg();
   if (!vod.synced && isFinite(video.duration) && video.duration > 60 && video.currentTime / video.duration >= 0.9) syncWatched(vod);
   checkSkip();
+  settleBurst(false);
   if (Date.now() - vodSaveAt > 10000) { vodSaveAt = Date.now(); saveVodPos(); }
 });
 video.addEventListener('ended', () => {
@@ -1121,6 +1184,7 @@ function closePlayer(fromPop) {
     if (!fromPop) { const j = overlays.lastIndexOf('player'); if (j >= 0) overlays.splice(j, 1); skipPops++; history.go(-2); fromPop = true; }
   }
   const wasVod = !!vod;
+  if (vod && !vod.doneMark) noteOutro(vod);
   setVod(null);
   playerOpen = false;
   playToken++;
@@ -1138,6 +1202,7 @@ function closePlayer(fromPop) {
 function zap(step) {
   if (vod) {
     if (vod.ep.movie) return;
+    if (step > 0) noteOutro(vod);
     const i = vod.idx + step;
     if (i < 0 || i >= vod.list.length) { toast(step > 0 ? 'Letzte Folge' : 'Erste Folge'); return; }
     return openVod(vod.list, i, vod.show, vod.ctx);
