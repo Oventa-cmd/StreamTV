@@ -214,6 +214,20 @@ function showTileHTML(p, rank) {
     <div class="caption">${esc(p.reason || TM.info(p))}</div>
   </div>`;
 }
+function resumeTileHTML(v) {
+  const m = v.m, pct = v.dur ? Math.min(100, v.pos / v.dur * 100) : 0;
+  const left = v.dur ? Math.max(1, Math.round((v.dur - v.pos) / 60)) : 0;
+  return `<div class="tile show cont focusable" tabindex="0" data-resume="${esc(v.id)}">
+    <div class="art">${m.img ? `<img class="bd" src="${esc(m.img)}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="ini">${esc(initials(m.show))}</span>`}
+      <div class="shade"></div><span class="ep-badge">S${esc(m.season)} E${esc(m.num)}</span>
+      <div class="t">${esc(m.show)}</div><span class="pbar"><i style="width:${pct.toFixed(1)}%"></i></span></div>
+    <div class="caption">${esc(m.title)}${left ? ` · noch ${left} Min.` : ''}</div>
+  </div>`;
+}
+function continueRail() {
+  const list = VP.continueList();
+  return list.length ? railHTML('Weiterschauen', list.map(resumeTileHTML).join('')) : '';
+}
 const skeletons = n => Array.from({ length: n }, () => `<div class="tile show skeleton"><div class="art"></div><div class="caption">&nbsp;</div></div>`).join('');
 function railHTML(title, inner, count) {
   return `<section><div class="section-label">${esc(title)}${count != null ? ` <small>${count}</small>` : ''}</div><div class="rail">${inner}</div></section>`;
@@ -235,7 +249,7 @@ function renderHome() {
   if (state.cat !== 'Alle' && !g.has(state.cat)) state.cat = 'Alle';
   renderChips();
   $('#liveCount').textContent = state.channels.length ? state.channels.length + ' Sender' : '';
-  $('#homeTop').innerHTML = channelRail('Meine Favoriten', favList()) + channelRail('Zuletzt gesehen', recentList());
+  $('#homeTop').innerHTML = continueRail() + channelRail('Meine Favoriten', favList()) + channelRail('Zuletzt gesehen', recentList());
 
   let rows = '';
   if (state.cat === 'Alle') {
@@ -359,13 +373,18 @@ function renderWlGroup() {
   $('#wlGroup').innerHTML = html;
 }
 function renderAll() { renderHome(); renderSearch(); renderFavs(); renderManage(); renderSettings(); renderDiscover(); }
+function focusSel(a) {
+  const d = a && a.dataset;
+  if (!d) return null;
+  for (const k of ['card', 'show', 'cat', 'resume']) if (d[k]) return `[data-${k}="${CSS.escape(d[k])}"]`;
+  return null;
+}
+const visibleOf = sel => [...document.querySelectorAll(sel)].find(e => e.getClientRects().length);
 function keepFocus(fn) {
-  const a = document.activeElement;
-  const sel = a && a.dataset && (a.dataset.card ? `[data-card="${CSS.escape(a.dataset.card)}"]`
-    : a.dataset.show ? `[data-show="${CSS.escape(a.dataset.show)}"]` : a.dataset.cat ? `[data-cat="${CSS.escape(a.dataset.cat)}"]` : null);
+  const sel = focusSel(document.activeElement);
   fn();
   if (sel && (!document.activeElement || document.activeElement === document.body)) {
-    const el = [...document.querySelectorAll(sel)].find(e => e.getClientRects().length);
+    const el = visibleOf(sel);
     if (el) el.focus({ preventScroll: true });
   }
 }
@@ -636,7 +655,9 @@ function iptvClick(el) {
   if (a === 'ep') {
     const all = ip.info.seasons.flatMap(s => s.eps);
     const ep = ip.info.seasons.find(s => s.num === Number(el.dataset.s)).eps[Number(el.dataset.i)];
-    openVod(all, all.indexOf(ep), ip.sel.it.name);
+    const p = ip.p, h = ip.sel;
+    const img = p.backdrop ? `${TM.IMG}w780${p.backdrop}` : p.poster ? `${TM.IMG}w500${p.poster}` : h.it.cover || '';
+    openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: h.it.sid, img, src: h.acc.name, name: p.title });
   }
 }
 
@@ -773,7 +794,8 @@ function setVod(v) {
   $('#pFav').classList.toggle('hidden', !!v);
   $('#pSub').textContent = v ? '◀▶ Spulen · ▲▼ Folge wechseln · OK Pause · Zurück schließen' : '▲▼ Sender wechseln · OK Pause · Zurück schließen';
 }
-function openVod(list, idx, show) {
+/** ctx = Herkunft für „Weiterschauen“: { acc, sid, img, src } */
+function openVod(list, idx, show, ctx) {
   const ep = list[idx];
   if (!ep) return;
   if (state.settings.vpnReq && bridge) {
@@ -781,7 +803,7 @@ function openVod(list, idx, show) {
     if (v && v.installed && !v.active) { toast('Kein VPN – ProtonVPN wird geöffnet'); setTimeout(() => bridge.openVpn(), 900); return; }
   }
   enterPlayer();
-  setVod({ list, idx, show, ep, resumed: false });
+  setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false });
   currentId = null;
   $('#pTitle').textContent = `${ep.num}. ${ep.title}`;
   $('#pGroup').textContent = `${show} · Staffel ${ep.season}`;
@@ -792,7 +814,40 @@ function openVod(list, idx, show) {
 }
 function saveVodPos() {
   if (!vod || !video.duration || !isFinite(video.duration) || video.currentTime < 5) return;
-  VP.set(vod.ep.id, video.currentTime, video.duration);
+  const e = vod.ep, c = vod.ctx;
+  VP.set(e.id, video.currentTime, video.duration, c ? {
+    show: (c && c.name) || vod.show, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || ''
+  } : null);
+}
+/* ---------- Weiterschauen ---------- */
+let resumeBusy = false;
+async function playResume(id) {
+  const v = VP.get(id);
+  if (!v || !v.m || resumeBusy) return;
+  const m = v.m;
+  let list = [{ id, num: m.num, season: m.season, title: m.title, url: m.url, dur: v.dur, plot: '' }], idx = 0;
+  const acc = XS.accounts().find(a => a.key === m.acc);
+  if (acc) {   // komplette Folgenliste holen, damit ▲▼ und „Nächste Folge“ funktionieren
+    resumeBusy = true;
+    const cached = XS.info_[acc.key + ':' + m.sid];
+    if (!cached) toast('Lade Folgen …');
+    try {
+      const info = cached || await Promise.race([XS.info(acc, m.sid), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))]);
+      const all = info.seasons.flatMap(s => s.eps), i = all.findIndex(e => e.id === id);
+      if (i >= 0) { list = all; idx = i; }
+    } catch (e) {} finally { resumeBusy = false; }
+  }
+  if (playerOpen) return;
+  openVod(list, idx, m.show, { acc: m.acc, sid: m.sid, img: m.img, src: m.src, name: m.show });
+}
+function hideResume(id) {
+  VP.hide(id);
+  const tiles = $$('[data-resume]'), i = tiles.findIndex(t => t.dataset.resume === id);
+  renderHome();
+  const rest = $$('[data-resume]');
+  const next = rest[Math.min(i, rest.length - 1)] || $('#homeTop .focusable') || $('.tabbar .active');
+  if (next) next.focus({ preventScroll: true });
+  toast('Aus „Weiterschauen“ entfernt');
 }
 function updateProg() {
   if (!vod) return;
@@ -823,7 +878,7 @@ video.addEventListener('timeupdate', () => {
 video.addEventListener('ended', () => {
   if (!vod) return;
   saveVodPos();
-  if (vod.idx + 1 < vod.list.length) { toast('Nächste Folge'); openVod(vod.list, vod.idx + 1, vod.show); }
+  if (vod.idx + 1 < vod.list.length) { toast('Nächste Folge'); openVod(vod.list, vod.idx + 1, vod.show, vod.ctx); }
   else closePlayer();
 });
 function closePlayer(fromPop) {
@@ -836,15 +891,18 @@ function closePlayer(fromPop) {
   setStatus('');
   $('#player').classList.remove('open');
   if (!fromPop) popOverlay('player');
-  if (wasVod && ip && ip.status === 'show') { renderIptv(true); return; }
-  keepFocus(() => renderHome());
-  if (playerFocus && playerFocus.isConnected) playerFocus.focus({ preventScroll: true });
+  if (wasVod && ip && ip.status === 'show') { renderHome(); renderIptv(true); return; }
+  const sel = focusSel(playerFocus), wasResume = !!(playerFocus && playerFocus.dataset && playerFocus.dataset.resume);
+  renderHome();
+  const target = playerFocus && playerFocus.isConnected ? playerFocus
+    : (sel && visibleOf(sel)) || (wasResume && visibleOf('[data-resume]')) || null;
+  if (target) target.focus({ preventScroll: true });
 }
 function zap(step) {
   if (vod) {
     const i = vod.idx + step;
     if (i < 0 || i >= vod.list.length) { toast(step > 0 ? 'Letzte Folge' : 'Erste Folge'); return; }
-    return openVod(vod.list, i, vod.show);
+    return openVod(vod.list, i, vod.show, vod.ctx);
   }
   const list = state.channels;
   if (!list.length) return;
@@ -933,6 +991,7 @@ document.addEventListener('keydown', e => {
   if (NAV_KEYS.includes(e.key)) { e.preventDefault(); navigate(e.key); return; }
   if (e.key === 'Enter' && a && a.classList.contains('tile')) { e.preventDefault(); a.click(); return; }
   if ((e.key === 'f' || e.key === 'ContextMenu') && a && a.dataset.card) { e.preventDefault(); toggleFav(a.dataset.card); }
+  if (e.key === 'ContextMenu' && a && a.dataset.resume) { e.preventDefault(); hideResume(a.dataset.resume); }
 });
 
 /* ================= Klicks ================= */
@@ -969,6 +1028,8 @@ document.addEventListener('click', e => {
   }
   const card = t.closest('[data-card]');
   if (card) { openPlayer(card.dataset.card); return; }
+  const rs = t.closest('[data-resume]');
+  if (rs) { playResume(rs.dataset.resume); return; }
   // Serien-Watchlist & TMDB (dynamisch gerendert)
   if (t.closest('#wlLogin')) return wlLogin();
   if (t.closest('#wlLogout')) { WL.logout(); TM.clear(); renderSettings(); loadDiscover(true); toast('Abgemeldet'); return; }

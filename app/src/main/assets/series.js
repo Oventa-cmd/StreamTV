@@ -138,14 +138,30 @@ const VP = {
   s: null,
   all() { if (!this.s) { try { this.s = JSON.parse(localStorage.getItem(this.STORE) || '{}'); } catch (e) { this.s = {}; } } return this.s; },
   get(id) { return this.all()[id] || null; },
-  set(id, pos, dur) {
+  /** m = Metadaten für „Weiterschauen“: { show, season, num, title, url, img, acc, sid, src } */
+  set(id, pos, dur, m) {
     const s = this.all();
+    const old = s[id];
     s[id] = { pos: Math.floor(pos), dur: Math.floor(dur || 0), at: Date.now() };
+    if (m || (old && old.m)) s[id].m = m || Object.assign({}, old.m, { hidden: false });
     const keys = Object.keys(s);
     if (keys.length > 400) keys.sort((a, b) => s[a].at - s[b].at).slice(0, keys.length - 400).forEach(k => delete s[k]);
-    try { localStorage.setItem(this.STORE, JSON.stringify(s)); } catch (e) {}
+    this.save();
   },
-  done(id) { const v = this.get(id); return !!(v && v.dur && v.pos >= v.dur - 90); }
+  save() { try { localStorage.setItem(this.STORE, JSON.stringify(this.all())); } catch (e) {} },
+  done(id) { const v = this.get(id); return !!(v && v.dur && v.pos >= v.dur - 90); },
+  /** Angefangene Folgen – pro Serie nur die zuletzt gesehene, neueste zuerst. */
+  continueList(max = 15) {
+    const s = this.all(), seen = new Set(), out = [];
+    Object.keys(s).filter(id => s[id].m).sort((a, b) => s[b].at - s[a].at).forEach(id => {
+      const v = s[id], k = v.m.acc + '|' + v.m.sid;
+      if (seen.has(k)) return;
+      seen.add(k);
+      if (!v.m.hidden && v.pos > 30 && !this.done(id)) out.push(Object.assign({ id }, v));
+    });
+    return out.slice(0, max);
+  },
+  hide(id) { const v = this.get(id); if (v && v.m) { v.m.hidden = true; this.save(); } }
 };
 const fmtTime = s => {
   s = Math.max(0, Math.floor(s || 0));
