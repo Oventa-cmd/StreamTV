@@ -288,3 +288,12 @@ button.pill:focus{background:#fff;color:#000}
 .epg-tm{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--mut)}
 .osd-epg .osd-prog{margin:.3rem 0}
 .osd-epg .osd-prog .bar i{background:var(--red)}
+
+/* ---------- Serien-Reiter ---------- */
+.title-count{font-size:1rem;font-weight:600;color:var(--mut2);letter-spacing:0;margin-left:.4rem}
+.grid.posters{grid-template-columns:repeat(auto-fill,minmax(8.6rem,1fr));gap:1.4rem 1.1rem}
+.tile.poster .art{aspect-ratio:2/3}
+.tile.poster img.cov{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tile.poster .ini{font-size:1.5rem}
+.tile.poster:focus .art{transform:scale(1.07) translateY(-.2rem)}
+#view-series .search{margin-bottom:.2rem}

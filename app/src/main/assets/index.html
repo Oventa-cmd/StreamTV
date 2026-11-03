@@ -15,6 +15,7 @@
   <nav class="tabbar">
     <button class="focusable" data-view="home">Start</button>
     <button class="focusable" data-view="discover">Entdecken</button>
+    <button class="focusable" data-view="series">Serien</button>
     <button class="focusable" data-view="search">Suche</button>
     <button class="focusable" data-view="favorites">Favoriten</button>
     <button class="focusable" data-view="manage">Kanäle</button>
@@ -45,6 +46,16 @@
   <section class="view" id="view-discover">
     <div class="pad"><h1 class="large-title">Entdecken</h1></div>
     <div id="discoverRows"></div>
+  </section>
+
+  <!-- ================= Serien (Katalog des Anbieters) ================= -->
+  <section class="view" id="view-series">
+    <div class="pad">
+      <h1 class="large-title">Serien <small class="title-count" id="serCount"></small></h1>
+      <input id="serQ" class="focusable search" type="search" placeholder="Serien filtern …" autocomplete="off" />
+    </div>
+    <div class="chips" id="serChips"></div>
+    <div id="serBody"></div>
   </section>
 
   <!-- ================= Suche ================= -->

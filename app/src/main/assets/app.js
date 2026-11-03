@@ -174,6 +174,7 @@ async function refreshSource(src, quiet) {
     state.channels = state.channels.filter(c => c.src !== src.id && c.src !== 'demo').concat(list);
     pruneRefs();
     Object.assign(src, { count: list.length, updated: Date.now(), error: '' });
+    SER.items = null; SER.status = 'idle';
     if (!quiet) toast(`${src.name}: ${list.length} Kanäle geladen`);
     return true;
   } catch (e) {
@@ -193,6 +194,7 @@ function removeSource(id) {
   if (!s || !confirm(`Quelle „${s.name}“ mit allen Kanälen entfernen?`)) return;
   state.sources = state.sources.filter(x => x.id !== id);
   state.channels = state.channels.filter(c => c.src !== id);
+  SER.items = null; SER.status = 'idle';
   pruneRefs(); refresh();
 }
 
@@ -676,6 +678,10 @@ function renderIptv(focusResume) {
 }
 function closeIptv(fromPop) {
   if (!ip) return;
+  if (ip.cat) {   // aus dem Serien-Reiter geöffnet: gleich ganz schließen
+    if (fromPop) { ip = null; $('#sheet').classList.remove('iptv'); }
+    return closeSheet();
+  }
   const p = ip.p;
   ip = null;
   $('#sheet').classList.remove('iptv');
@@ -685,7 +691,10 @@ function closeIptv(fromPop) {
 function iptvClick(el) {
   const a = el.dataset.ip;
   if (a === 'back') return closeIptv();
-  if (a === 'retry') { const key = ip.p.type + ':' + ip.p.id; closeIptv(); return openIptv(key); }
+  if (a === 'retry') {
+    if (ip.cat) { ip.token = Date.now(); return selectHit(0); }
+    const key = ip.p.type + ':' + ip.p.id; closeIptv(); return openIptv(key);
+  }
   if (a === 'hits') { ip.sel = null; ip.info = null; ip.status = 'list'; return renderIptv(); }
   if (a === 'hit') return selectHit(Number(el.dataset.i));
   if (a === 'season') { ip.season = Number(el.dataset.s); renderIptv(); const c = $(`#sheet [data-ipk="s${ip.season}"]`); if (c) c.focus({ preventScroll: true }); return; }
@@ -694,8 +703,115 @@ function iptvClick(el) {
     const ep = ip.info.seasons.find(s => s.num === Number(el.dataset.s)).eps[Number(el.dataset.i)];
     const p = ip.p, h = ip.sel;
     const img = p.backdrop ? `${TM.IMG}w780${p.backdrop}` : p.poster ? `${TM.IMG}w500${p.poster}` : h.it.cover || '';
-    openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: (ep.movie ? 'm' : '') + h.it.sid, img, src: h.acc.name, name: p.title, tmdb: p.type + ':' + p.id });
+    openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: (ep.movie ? 'm' : '') + h.it.sid, img, src: h.acc.name, name: p.title, tmdb: p.id ? p.type + ':' + p.id : '' });
   }
+}
+
+/* ================= Serien-Reiter (Katalog des Anbieters) ================= */
+const SER = { items: null, cats: [], cat: 'Alle', list: [], shown: 0, BATCH: 60, status: 'idle', msg: '', loading: false };
+const cleanName = n => String(n || '').replace(/^\s*((\||\[)[^|\]]{1,12}(\||\])\s*|[A-Z]{2,4}\s*[-:|]\s+)+/, '').trim() || n;
+async function loadSeriesCatalog(force) {
+  if (SER.loading || (!force && SER.items)) { if (!force) renderSeriesView(false); return; }
+  const accs = XS.accounts();
+  if (!accs.length) { SER.status = 'none'; SER.items = null; return renderSeriesView(true); }
+  SER.loading = true; SER.status = 'loading'; renderSeriesView(true);
+  const errors = [], items = [], cats = [];
+  await Promise.all(accs.map(async acc => {
+    try {
+      const c = await XS.catalog(acc, force, 'series');
+      for (const it of c.list) items.push({ acc, it });
+      for (const n of c.cats) if (!cats.includes(n)) cats.push(n);
+    } catch (e) { errors.push(`${acc.name}: ${e.message}`); }
+  }));
+  SER.loading = false;
+  if (!items.length) {
+    SER.items = null;
+    SER.status = 'error';
+    SER.msg = errors.length ? errors.join(' · ') : 'Dein Anbieter bietet keine Serien an.';
+  } else {
+    SER.items = items; SER.status = 'ready';
+    const used = new Set(items.map(x => x.it.cat).filter(Boolean));
+    SER.cats = cats.filter(n => used.has(n)).concat([...used].filter(n => !cats.includes(n)));
+    if (SER.cat !== 'Alle' && !used.has(SER.cat)) SER.cat = 'Alle';
+    if (errors.length) toast(errors.join(' · '));
+  }
+  if (state.view === 'series') renderSeriesView(true);
+}
+function serTileHTML(x, i) {
+  const it = x.it;
+  return `<div class="tile poster focusable" tabindex="0" data-ser="${i}">
+    <div class="art"><span class="ini">${esc(initials(cleanName(it.name)))}</span>
+      ${it.cover ? `<img class="cov" src="${esc(it.cover)}" alt="" loading="lazy" onerror="this.remove()">` : ''}</div>
+    <div class="caption">${esc(cleanName(it.name))}</div>
+    <div class="sub">${esc([it.year, it.cat].filter(Boolean).join(' · '))}</div>
+  </div>`;
+}
+function renderSeriesView(reset) {
+  const body = $('#serBody');
+  if (SER.status === 'none') {
+    $('#serChips').innerHTML = ''; $('#serCount').textContent = '';
+    body.innerHTML = `<div class="pad"><div class="group"><div class="row-item"><div class="meta"><b>Keine Xtream-Quelle</b>
+      <small>Der Serienkatalog kommt von deinem IPTV-Anbieter. Unter „Einstellungen“ einen Xtream-Zugang hinzufügen.</small></div>
+      <div class="actions"><button class="btn primary small focusable" data-view="settings">Zu den Einstellungen</button></div></div></div></div>`;
+    return;
+  }
+  if (SER.status === 'loading') {
+    $('#serChips').innerHTML = ''; $('#serCount').textContent = '';
+    body.innerHTML = `<p class="hint pad">Lade den Serienkatalog deines Anbieters … (beim ersten Mal etwas länger)</p>
+      <div class="grid posters">${Array.from({ length: 12 }, () => '<div class="tile poster skeleton"><div class="art"></div><div class="caption">&nbsp;</div></div>').join('')}</div>`;
+    return;
+  }
+  if (SER.status === 'error') {
+    $('#serChips').innerHTML = ''; $('#serCount').textContent = '';
+    body.innerHTML = `<div class="pad"><div class="group"><div class="row-item"><div class="meta"><b>Serienkatalog nicht verfügbar</b>
+      <small class="err">${esc(SER.msg)}</small></div>
+      <div class="actions"><button class="btn small focusable" data-ser-act="retry">Erneut versuchen</button></div></div></div></div>`;
+    return;
+  }
+  if (SER.status !== 'ready') return;
+  if (!reset && body.querySelector('.grid')) return;
+  const q = XS.norm($('#serQ').value.trim());
+  const all = SER.items;
+  SER.list = [];
+  for (let i = 0; i < all.length; i++) {
+    const it = all[i].it;
+    if (SER.cat !== 'Alle' && it.cat !== SER.cat) continue;
+    if (q && !it.n.includes(q)) continue;
+    SER.list.push(i);
+  }
+  $('#serCount').textContent = SER.list.length.toLocaleString('de-DE') + (SER.list.length !== all.length ? ' von ' + all.length.toLocaleString('de-DE') : '');
+  $('#serChips').innerHTML = ['Alle', ...SER.cats].map(n => `<button class="chip focusable ${SER.cat === n ? 'active' : ''}" data-scat="${esc(n)}">${esc(n)}</button>`).join('');
+  SER.shown = 0;
+  body.innerHTML = SER.list.length ? '<div class="grid posters" id="serGrid"></div>' : `<p class="empty">Keine Serien gefunden.</p>`;
+  seriesMore(true);
+}
+/** Nächsten Block anhängen, sobald das Ende in Sichtweite ist. */
+function seriesMore(force) {
+  const g = $('#serGrid');
+  if (!g || SER.shown >= SER.list.length) return;
+  if (!force) {
+    const last = g.lastElementChild;
+    if (last && last.getBoundingClientRect().top > window.innerHeight * 2.5) return;
+  }
+  const n = Math.min(SER.list.length, SER.shown + SER.BATCH);
+  let html = '';
+  for (let k = SER.shown; k < n; k++) html += serTileHTML(SER.items[SER.list[k]], SER.list[k]);
+  g.insertAdjacentHTML('beforeend', html);
+  SER.shown = n;
+}
+/** Katalog-Serie in der bestehenden Staffel-/Folgenansicht öffnen. */
+function openCatalogSeries(i) {
+  const x = SER.items && SER.items[i];
+  if (!x || sheetOpen) return;
+  lastFocus = document.activeElement; sheetOpen = true;
+  pushOverlay('sheet');
+  $('#sheet').classList.add('open');
+  $('#sheetBd').style.backgroundImage = x.it.cover ? `url("${x.it.cover.replace(/"/g, '%22')}")` : 'none';
+  const p = { type: 'tv', id: x.it.tmdb || 0, title: cleanName(x.it.name), backdrop: null, poster: null };
+  ip = { p, d: null, status: 'loadingShow', msg: '', hits: [{ acc: x.acc, it: x.it, s: 100 }], sel: null, info: null, season: null, token: Date.now(), cat: true };
+  pushOverlay('iptv');
+  $('#sheet').classList.add('iptv');
+  selectHit(0);
 }
 
 /* ================= Overlays & Zurück-Taste ================= */
@@ -723,6 +839,7 @@ function handleBack() {
 /* ================= Ansichten ================= */
 function show(view) {
   state.view = view;
+  if (view === 'series') loadSeriesCatalog(false);
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   window.scrollTo(0, 0);
@@ -1091,6 +1208,12 @@ document.addEventListener('click', e => {
   if (card) { openPlayer(card.dataset.card); return; }
   const rs = t.closest('[data-resume]');
   if (rs) { playResume(rs.dataset.resume); return; }
+  const sc = t.closest('[data-scat]');
+  if (sc) { SER.cat = sc.dataset.scat; renderSeriesView(true); const c = visibleOf(`[data-scat="${CSS.escape(SER.cat)}"]`); if (c) { c.focus({ preventScroll: true }); c.scrollIntoView({ block: 'nearest', inline: 'center' }); } return; }
+  const sr = t.closest('[data-ser]');
+  if (sr) { openCatalogSeries(Number(sr.dataset.ser)); return; }
+  const sv = t.closest('[data-ser-act]');
+  if (sv) { if (sv.dataset.serAct === 'retry') loadSeriesCatalog(true); return; }
   // Serien-Watchlist & TMDB (dynamisch gerendert)
   if (t.closest('#wlLogin')) return wlLogin();
   if (t.closest('#wlLogout')) { WL.logout(); TM.clear(); renderSettings(); loadDiscover(true); toast('Abgemeldet'); return; }
@@ -1103,6 +1226,8 @@ document.addEventListener('click', e => {
 });
 $('#q').addEventListener('input', () => { renderSearch(); searchShows(); });
 $('#mq').addEventListener('input', renderManage);
+let serQTimer = null;
+$('#serQ').addEventListener('input', () => { clearTimeout(serQTimer); serQTimer = setTimeout(() => renderSeriesView(true), 280); });
 $('#vpnBadge').addEventListener('click', () => { if (bridge) bridge.openVpn(); });
 
 async function wlLogin() {
@@ -1238,7 +1363,7 @@ function tick() { $('#clock').textContent = new Date().toLocaleTimeString('de-DE
 load();
 EPG.load();
 EPG.onUpdate(epgPatch);
-document.addEventListener('scroll', () => EPG.scan(), true);
+document.addEventListener('scroll', () => { EPG.scan(); if (state.view === 'series') seriesMore(); }, true);
 setInterval(() => {   // laufende Sendung aktuell halten
   const ids = new Set($$('.tile[data-card]').map(t => t.dataset.card));
   ids.forEach(epgPatch);

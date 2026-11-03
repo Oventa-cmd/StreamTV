@@ -61,7 +61,8 @@ const XS = {
         ext: vod ? (o.container_extension || 'mp4') : ''
       };
     });
-    return (this.cat_[ck] = { at: Date.now(), list: items });
+    const order = (Array.isArray(cats) ? cats : []).map(x => x.category_name).filter(Boolean);
+    return (this.cat_[ck] = { at: Date.now(), list: items, cats: order });
   },
 
   score(q, it) {
