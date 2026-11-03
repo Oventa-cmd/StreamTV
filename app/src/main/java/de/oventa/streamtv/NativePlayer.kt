@@ -21,6 +21,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import org.json.JSONArray
 import org.json.JSONObject
@@ -89,6 +90,8 @@ class NativePlayer(private val act: Activity, private val root: FrameLayout, pri
         val p = ExoPlayer.Builder(act, rf).setMediaSourceFactory(DefaultMediaSourceFactory(http)).build()
         p.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
         p.setVideoSurfaceView(sv)
+        // Springen zum naechsten Schluesselbild: viel schneller ueber das Netz (wie bei Netflix)
+        p.setSeekParameters(SeekParameters.CLOSEST_SYNC)
         p.addListener(listener)
         p.setMediaItem(MediaItem.fromUri(url), startMs.coerceAtLeast(0))
         p.prepare()

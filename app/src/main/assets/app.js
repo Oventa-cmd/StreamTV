@@ -1449,7 +1449,7 @@ const nvOk = () => { try { return !!(bridge && typeof bridge.nvPlay === 'functio
 NV.ev = (type, pos, dur, paused, msg) => {
   if (!NV.on) return;
   NV.t = pos / 1000; NV.d = dur > 0 ? dur / 1000 : NaN; NV.paused = !!paused;
-  if (NV.seeking && (type === 'playing' || type === 'pause' || Date.now() - NV.seekAt > 1500)) { NV.seeking = false; video.dispatchEvent(new Event('seeked')); }
+  if (NV.seeking && (type === 'playing' || (type === 'pause' && paused) || Date.now() - NV.seekAt > 30000)) { NV.seeking = false; video.dispatchEvent(new Event('seeked')); }
   if (type === 'error') { console.warn('Nativer Player:', msg); if (failCb) failCb(); return; }
   if (type === 'tracks') {
     try { NV.tracks = JSON.parse(bridge.nvTracks() || '[]'); } catch (e) { NV.tracks = []; }
@@ -1593,7 +1593,7 @@ setInterval(() => {
   if (!playerOpen || !RC.loadPlayed || RC.waiting || RC.dead || video.paused || video.seeking && vod) return;
   const t = video.currentTime;
   if (t !== RC.lastT) { RC.lastT = t; RC.lastMove = Date.now(); return; }
-  if (Date.now() - RC.lastMove > RC.STALL) reconnect('Stream hängt');
+  if (Date.now() - RC.lastMove > (vod ? 40000 : RC.STALL)) reconnect('Stream hängt');
 }, 1000);
 window.addEventListener('online', () => { if (playerOpen && (RC.waiting || RC.dead)) retryNow(); });
 window.addEventListener('offline', () => { if (playerOpen && RC.loadPlayed && !vod) setStatus('Keine Internetverbindung …'); });
@@ -2078,6 +2078,8 @@ function playerKey(e) {
 video.addEventListener('pause', () => checkSkip());
 video.addEventListener('play', () => checkSkip());
 video.addEventListener('waiting', () => { if (engine && !RC.waiting) setStatus('Puffern …'); });
+video.addEventListener('seeking', () => { RC.lastMove = Date.now(); RC.lastT = -1; if (vod && engine && !RC.waiting) setStatus('Lädt …'); });
+video.addEventListener('seeked', () => { RC.lastMove = Date.now(); if (vod && !video.paused && /^(Lädt|Puffern)/.test($('#status').textContent)) setTimeout(() => { if (!video.seeking) setStatus(''); }, 300); });
 video.addEventListener('playing', () => {
   clearTimeout(startTimer); setStatus('');
   RC.played = RC.loadPlayed = true; RC.eng = engine; RC.tries = 0; RC.rounds = 0; RC.dead = false; RC.lastMove = Date.now();
