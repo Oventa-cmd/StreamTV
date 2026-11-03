@@ -35,6 +35,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- Deep Links vom TV-Launcher: streamtv://resume/…, streamtv://title/tv/123?play=1 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="streamtv" />
+            </intent-filter>
         </activity>
+
+        <!-- "Weiterschauen" fuer den TV-Launcher (nur lesen, Zugriff nur fuer de.oventa.tvlauncher) -->
+        <provider
+            android:name=".ContinueProvider"
+            android:authorities="de.oventa.streamtv.continue"
+            android:exported="true" />
     </application>
 </manifest>

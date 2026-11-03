@@ -173,6 +173,21 @@ const VP = {
     const keys = Object.keys(s);
     if (keys.length > 400) keys.sort((a, b) => s[a].at - s[b].at).slice(0, keys.length - 400).forEach(k => delete s[k]);
     this.save();
+    this.share();
+  },
+  /** Weiterschauen-Liste an die App übergeben (für den TV-Launcher). */
+  share() {
+    clearTimeout(this.shareT);
+    this.shareT = setTimeout(() => {
+      try {
+        const b = window.StreamTVApp;
+        if (!b || typeof b.setContinue !== 'function') return;
+        b.setContinue(JSON.stringify(this.continueList(20).map(v => ({
+          id: v.id, show: v.m.show, season: v.m.season || 0, episode: v.m.num || 0, title: v.m.title || '', image: v.m.img || '',
+          pos: v.pos, dur: v.dur, updated: v.at, tmdb: v.m.tmdb || '', movie: !!v.m.movie, uri: 'streamtv://resume/' + encodeURIComponent(v.id)
+        }))));
+      } catch (e) {}
+    }, 800);
   },
   save() { try { localStorage.setItem(this.STORE, JSON.stringify(this.all())); } catch (e) {} },
   /** Gesehen = im Abspann angekommen (mind. 90 s, bei langen Titeln bis 150 s = 4 % vor Schluss). */
@@ -188,7 +203,7 @@ const VP = {
     });
     return out.slice(0, max);
   },
-  hide(id) { const v = this.get(id); if (v && v.m) { v.m.hidden = true; this.save(); } }
+  hide(id) { const v = this.get(id); if (v && v.m) { v.m.hidden = true; this.save(); this.share(); } }
 };
 const fmtTime = s => {
   s = Math.max(0, Math.floor(s || 0));

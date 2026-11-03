@@ -23,6 +23,7 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var pendingConfig: String? = null
+    private var pendingDeep: String? = null
     private var pageReady = false
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
@@ -52,9 +53,11 @@ class MainActivity : Activity() {
             override fun onPageFinished(view: WebView, url: String) {
                 pageReady = true
                 deliverConfig()
+                deliverDeep()
             }
         }
         takeConfig(intent)
+        takeDeep(intent)
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(
                 view: WebView,
@@ -121,6 +124,12 @@ class MainActivity : Activity() {
             true
         } catch (e: Exception) { false }
 
+        /** Weiterschauen-Liste (JSON-Array) fuer den TV-Launcher speichern. */
+        @JavascriptInterface
+        fun setContinue(json: String) {
+            getSharedPreferences(ContinueProvider.PREFS, Context.MODE_PRIVATE).edit().putString(ContinueProvider.KEY, json).apply()
+        }
+
         @JavascriptInterface
         fun appVersion(): String = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: ""
@@ -132,6 +141,22 @@ class MainActivity : Activity() {
         super.onNewIntent(intent)
         takeConfig(intent)
         deliverConfig()
+        takeDeep(intent)
+        deliverDeep()
+    }
+
+    private fun takeDeep(i: Intent?) {
+        val d = i?.data ?: return
+        if (d.scheme != "streamtv") return
+        pendingDeep = d.toString()
+        i.data = null
+    }
+
+    private fun deliverDeep() {
+        val d = pendingDeep ?: return
+        if (!pageReady) return
+        pendingDeep = null
+        web.evaluateJavascript("window.openDeep && openDeep(" + JSONObject.quote(d) + ")", null)
     }
 
     private fun takeConfig(i: Intent?) {

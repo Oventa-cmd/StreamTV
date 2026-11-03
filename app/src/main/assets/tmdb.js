@@ -333,7 +333,7 @@ const TM = {
       const p = (this.cache[id].items || []).find(x => x.type + ':' + x.id === key);
       if (p) return p;
     }
-    return (this.searchRes || []).find(x => x.type + ':' + x.id === key) || null;
+    return (this.searchRes || []).find(x => x.type + ':' + x.id === key) || (this.extra || []).find(x => x.type + ':' + x.id === key) || null;
   },
   async search(q) {
     const j = await this.get('/search/multi', { query: q, include_adult: 'false' });

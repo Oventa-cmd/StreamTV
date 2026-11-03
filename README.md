@@ -35,6 +35,11 @@ IPTV-Player für Fire TV / Android TV im Apple-Stil (WebView-App, Oberfläche li
 - ProtonVPN-Anbindung (Autostart, „nur mit VPN abspielen“)
 - **Update-Hinweis:** prüft höchstens alle 12 h die neueste GitHub-Version und zeigt den ADB-Befehl unter „Einstellungen → App-Update“
 
+## Verbindung zum TV-Launcher
+
+- Deep Links: `streamtv://resume/<Folge>`, `streamtv://title/tv/<TMDB-ID>?play=1[&s=2&e=5]`, `streamtv://title/movie/<ID>?play=1`, `streamtv://sport`
+- „Weiterschauen“ für den Launcher: ContentProvider `content://de.oventa.streamtv.continue/items` (nur lesen, nur für `de.oventa.tvlauncher`)
+
 ## Bedienung im Player
 
 | Taste | Live-TV | Serie / Film |

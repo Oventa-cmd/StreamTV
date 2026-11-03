@@ -603,11 +603,11 @@ function liveSearch(title) {
 
 /* ================= Serie beim IPTV-Anbieter ================= */
 let ip = null;   // { p, d, status, msg, hits, sel, info, season, token }
-async function openIptv(key) {
+async function openIptv(key, autoplay) {
   const p = TM.find(key);
   if (!p || !sheetOpen) return;
   const d = TM.details_[key] || null;
-  ip = { p, d, status: 'loading', msg: '', hits: [], sel: null, info: null, season: null, token: Date.now() };
+  ip = { p, d, status: 'loading', msg: '', hits: [], sel: null, info: null, season: null, token: Date.now(), autoplay: autoplay || null };
   pushOverlay('iptv');
   $('#sheet').classList.add('iptv');
   sheetAnim();
@@ -639,6 +639,7 @@ async function selectHit(i) {
     ip.info = info; ip.status = 'show';
     ip.season = resumeEp(info) ? resumeEp(info).season : info.seasons[0].num;
     renderIptv(true);
+    if (ip.autoplay) autoPlayIptv();
   } catch (e) {
     if (!ip || ip.token !== tok) return;
     ip.status = 'error'; ip.msg = e.message; renderIptv();
@@ -1182,6 +1183,62 @@ setInterval(() => {
   if (playerOpen && !video.paused) { lastInput = Date.now(); return; }
   if (Date.now() - lastInput > m * 60000) openSaver();
 }, 5000);
+
+/** Vom Launcher „abspielen“: angefangene Folge, sonst gewünschte (s/e), sonst erste. */
+function autoPlayIptv() {
+  const a = ip.autoplay;
+  ip.autoplay = null;
+  const all = ip.info.seasons.flatMap(s => s.eps);
+  let ep = resumeEp(ip.info);
+  if (!ep && a.s) ep = all.find(e => e.season === a.s && e.num === a.e) || null;
+  if (!ep) ep = all[0];
+  if (!ep) return;
+  const p = ip.p, h = ip.sel;
+  const img = p.backdrop ? `${TM.IMG}w780${p.backdrop}` : p.poster ? `${TM.IMG}w500${p.poster}` : h.it.cover || '';
+  openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: (ep.movie ? 'm' : '') + h.it.sid, img, src: h.acc.name, name: p.title, tmdb: p.id ? p.type + ':' + p.id : '' });
+}
+
+/* ================= Deep Links (TV-Launcher) ================= */
+// streamtv://resume/<Folge>          → Folge an der gespeicherten Stelle fortsetzen
+// streamtv://title/<tv|movie>/<id>   → Detailansicht; ?play=1[&s=2&e=5] → beim Anbieter suchen und abspielen
+// streamtv://sport · streamtv://series · streamtv://home
+async function openDeep(uri) {
+  let u;
+  try { u = new URL(String(uri).replace(/^streamtv:\/\//i, 'http://x/')); } catch (e) { return; }
+  const parts = u.pathname.split('/').filter(Boolean).map(decodeURIComponent), q = u.searchParams;
+  // offene Ebenen schließen
+  if (saverOpen) closeSaver();
+  if (remEv) hideReminder();
+  if (playerOpen) closePlayer();
+  if (sheetOpen) closeSheet();
+  await new Promise(r => afterPops(r));
+  const route = parts[0] || 'home';
+  if (route === 'resume' && parts[1]) {
+    show('home');
+    if (VP.get(parts[1])) return playResume(parts[1]);
+    toast('Folge nicht mehr in „Weiterschauen“');
+    return;
+  }
+  if (route === 'title' && parts[2]) {
+    const type = parts[1] === 'movie' ? 'movie' : 'tv', id = Number(parts[2]), key = type + ':' + id;
+    show(type === 'movie' ? 'discover' : 'home');
+    if (!TM.key()) { toast('Für Serien-Links bitte zuerst das Watchlist-Konto oder einen TMDB-Schlüssel einrichten'); return; }
+    let p = TM.find(key);
+    if (!p) {
+      try {
+        const d = await TM.details(type, id);
+        p = TM.pick(d, type);
+        TM.extra = [p].concat((TM.extra || []).filter(x => x.type + ':' + x.id !== key)).slice(0, 30);
+      } catch (e) { toast('Titel konnte nicht geladen werden'); return; }
+    }
+    await openSheet(key);
+    if (q.get('play') === '1') openIptv(key, { s: Number(q.get('s')) || 0, e: Number(q.get('e')) || 0 });
+    return;
+  }
+  if (['sport', 'series', 'discover', 'search', 'favorites', 'settings'].includes(route)) { show(route); return; }
+  show('home');
+}
+window.openDeep = openDeep;
 
 /* ================= Overlays & Zurück-Taste ================= */
 const overlays = [];
@@ -2237,7 +2294,8 @@ setInterval(renderVpn, 15000);
 try { if (bridge) $('#appVersion').textContent = 'Version ' + bridge.appVersion(); } catch (e) {}
 vpnOnStart();
 setTimeout(() => checkUpdate(false), 5000);   // Start nicht blockieren
-setTimeout(() => SP.refresh(false), 8000);    // Sportdaten im Hintergrund (für Erinnerungen)
+setTimeout(() => SP.refresh(false), 8000);
+VP.share();    // Sportdaten im Hintergrund (für Erinnerungen)
 setInterval(checkReminders, 15000);
 setTimeout(checkReminders, 3000);
 setupHero();
