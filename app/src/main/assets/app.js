@@ -385,6 +385,7 @@ function renderSettings() {
     </div>`).join('') : `<div class="row-item"><span class="hint">Noch keine Quelle – oben einen M3U-Link oder Xtream-Zugang hinzufügen.</span></div>`;
   renderWlGroup();
   renderVpn();
+  renderUpdate();
 }
 function renderWlGroup() {
   const own = (state.settings.tmdbKey || '').trim();
@@ -1674,6 +1675,61 @@ function vpnOnStart() {
 }
 window.onAppResume = () => { renderVpn(); setTimeout(renderVpn, 2500); };
 
+/* ================= Update-Hinweis (GitHub-Releases) ================= */
+const UPD = {
+  STORE: 'streamtv.update', EVERY: 12 * 3600 * 1000,
+  API: 'https://api.github.com/repos/Oventa-cmd/StreamTV/releases/latest',
+  APK: 'https://github.com/Oventa-cmd/StreamTV/releases/latest/download/StreamTV.apk',
+  s: null, busy: false,
+  get() { if (!this.s) { try { this.s = JSON.parse(localStorage.getItem(this.STORE) || '{}'); } catch (e) { this.s = {}; } } return this.s; },
+  save() { try { localStorage.setItem(this.STORE, JSON.stringify(this.s)); } catch (e) {} }
+};
+/** Laufnummer aus „v1.0.42“ bzw. „1.0.42“. */
+const runOf = v => { const m = String(v || '').match(/(\d+)\.(\d+)\.(\d+)/); return m ? Number(m[3]) : 0; };
+function appVersion() { try { return bridge ? String(bridge.appVersion() || '') : ''; } catch (e) { return ''; } }
+function updateAvailable() {
+  const u = UPD.get(), cur = runOf(appVersion());
+  return !!(cur && u.latest && runOf(u.latest) > cur);
+}
+async function checkUpdate(manual) {
+  const u = UPD.get();
+  if (UPD.busy) return;
+  if (!bridge && !manual) return;   // nur in der Fire-TV-App
+  if (!manual && u.at && Date.now() - u.at < UPD.EVERY) return;
+  UPD.busy = true; renderUpdate();
+  try {
+    const r = await request('GET', UPD.API, { headers: { Accept: 'application/vnd.github+json' }, timeout: 15000 });
+    if (r.status !== 200) throw new Error(r.status === 403 ? 'GitHub-Limit erreicht – später erneut versuchen' : 'GitHub antwortet nicht (' + r.status + ')');
+    const j = JSON.parse(r.text);
+    Object.assign(u, { at: Date.now(), latest: j.tag_name || '', date: j.published_at || '', name: j.name || '', err: '' });
+    UPD.save();
+    if (updateAvailable()) toast(`Update verfügbar: Version ${u.latest.replace(/^v/, '')} – Details unter „Einstellungen“`);
+    else if (manual) toast(appVersion() ? 'StreamTV ist aktuell' : 'Neueste Version: ' + (u.latest || '–'));
+  } catch (e) {
+    u.at = Date.now(); u.err = e.message; UPD.save();
+    if (manual) toast('Update-Prüfung fehlgeschlagen: ' + e.message);
+  } finally { UPD.busy = false; renderUpdate(); }
+}
+function renderUpdate() {
+  const box = $('#updGroup');
+  if (!box) return;
+  const u = UPD.get(), cur = appVersion(), avail = updateAvailable();
+  const when = u.at ? new Date(u.at).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : 'noch nie';
+  const latest = u.latest ? u.latest.replace(/^v/, '') : '';
+  let html = `<div class="row-item"><div class="meta">
+      <b>${avail ? `Update verfügbar: Version ${esc(latest)}` : cur && latest ? 'StreamTV ist aktuell' : 'Installierte Version'}</b>
+      <small>Installiert: ${esc(cur || '– (nur in der Fire-TV-App)')}${latest ? ' · Neueste: ' + esc(latest) : ''} · geprüft: ${esc(when)}</small>
+      ${u.err ? `<small class="err">${esc(u.err)}</small>` : ''}
+    </div><div class="actions"><button class="mini focusable" id="updCheck" ${UPD.busy ? 'disabled' : ''}>${UPD.busy ? 'Prüfe …' : 'Jetzt prüfen'}</button></div></div>`;
+  if (avail) html += `<div class="row-item upd-cmd"><div class="meta"><b>Am PC aktualisieren (ADB)</b>
+      <code>curl -L -o StreamTV.apk ${esc(UPD.APK)}\nadb connect &lt;IP-des-Fire-TV&gt;:5555\nadb install -r StreamTV.apk</code>
+      <small>Oder in der Downloader-App: ${esc(UPD.APK)}</small></div></div>`;
+  box.innerHTML = html;
+  $('#updFoot').textContent = avail ? 'Die IP steht auf dem Fire TV unter Einstellungen → Mein Fire TV → Info → Netzwerk. Einstellungen und Daten bleiben beim Update erhalten.' : '';
+  $$('.tabbar [data-view="settings"]').forEach(b => b.classList.toggle('badge', avail));
+}
+document.addEventListener('click', e => { if (e.target.closest('#updCheck')) checkUpdate(true); });
+
 /* ================= Uhr ================= */
 function tick() { $('#clock').textContent = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }); }
 
@@ -1697,6 +1753,7 @@ tick(); setInterval(tick, 15000);
 setInterval(renderVpn, 15000);
 try { if (bridge) $('#appVersion').textContent = 'Version ' + bridge.appVersion(); } catch (e) {}
 vpnOnStart();
+setTimeout(() => checkUpdate(false), 5000);   // Start nicht blockieren
 setupHero();
 loadDiscover(false);
 if (state.settings.autoRefresh) {
