@@ -219,6 +219,7 @@ function epgPatch(id) {
     if (sub.textContent !== t) sub.textContent = t;
   }
   if (playerOpen && id === currentId) renderOsdEpg();
+  if (clistOpen && cl.ids.includes(id)) renderClist();
 }
 function renderOsdEpg() {
   const box = $('#pEpg'), n = !vod && currentId ? EPG.now(currentId) : null;
@@ -827,6 +828,7 @@ window.addEventListener('popstate', () => {
   if (skipPops > 0) { skipPops--; return; }
   const top = overlays.pop();
   if (top === 'pmenu') closeMenu(true);
+  else if (top === 'clist') closeClist(true);
   else if (top === 'player') closePlayer(true);
   else if (top === 'iptv') closeIptv(true);
   else if (top === 'sheet') closeSheet(true);
@@ -913,6 +915,7 @@ function loadStream(url) {
 function setStatus(t) { $('#status').textContent = t; }
 function showOsd() {
   const o = $('#osd');
+  if (clistOpen) { o.classList.add('hide'); return; }
   o.classList.remove('hide');
   clearTimeout(osdTimer);
   osdTimer = setTimeout(() => o.classList.add('hide'), 4500);
@@ -957,7 +960,7 @@ function setVod(v) {
   if (v) $('#pEpg').classList.add('hidden');
   $('#pFav').classList.toggle('hidden', !!v);
   $('#pSub').textContent = v ? (v.ep.movie ? '◀▶ Spulen · OK Pause · ≡ Optionen · Zurück schließen' : '◀▶ Spulen · ▲▼ Folge · OK Pause · ≡ Optionen · Zurück')
-    : '▲▼ Sender wechseln · OK Pause · ≡ Optionen · Zurück schließen';
+    : '◀ Senderliste · ▲▼ Sender · OK Pause · ≡ Optionen · Zurück';
 }
 /** ctx = Herkunft für „Weiterschauen“: { acc, sid, img, src } */
 function openVod(list, idx, show, ctx) {
@@ -1178,9 +1181,11 @@ video.addEventListener('ended', () => {
 });
 function closePlayer(fromPop) {
   if (!playerOpen) return;
-  if (menuOpen) {   // Menü liegt noch auf dem Verlauf → beide Einträge auf einmal entfernen
-    menuOpen = false; $('#pMenu').classList.add('hidden');
-    const i = overlays.lastIndexOf('pmenu'); if (i >= 0) overlays.splice(i, 1);
+  if (menuOpen || clistOpen) {   // Menü/Senderliste liegt noch auf dem Verlauf → beide Einträge auf einmal entfernen
+    const sub = menuOpen ? 'pmenu' : 'clist';
+    menuOpen = false; clistOpen = false;
+    $('#pMenu').classList.add('hidden'); $('#pList').classList.add('hidden');
+    const i = overlays.lastIndexOf(sub); if (i >= 0) overlays.splice(i, 1);
     if (!fromPop) { const j = overlays.lastIndexOf('player'); if (j >= 0) overlays.splice(j, 1); skipPops++; history.go(-2); fromPop = true; }
   }
   const wasVod = !!vod;
@@ -1216,6 +1221,8 @@ function togglePlay() { video.paused ? safePlay(video) : video.pause(); }
 function playerKey(e) {
   const k = e.key;
   if (menuOpen) return menuKey(e);
+  if (clistOpen) return clistKey(e);
+  if (!vod && currentId && k === 'ArrowLeft') { e.preventDefault(); openClist(); return; }
   if (skipKind && ['Enter', ' '].includes(k)) { e.preventDefault(); doSkip(); return; }
   if (k === 'ContextMenu' || k === 'm' || k === 'M') { e.preventDefault(); openMenu(); return; }
   if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k)) { e.preventDefault(); closePlayer(); return; }
@@ -1233,6 +1240,78 @@ video.addEventListener('waiting', () => { if (engine) setStatus('Puffern …'); 
 video.addEventListener('playing', () => { clearTimeout(startTimer); setStatus(''); });
 video.addEventListener('error', () => { if (engine === 'native' && failCb) failCb(); });
 $('#player').addEventListener('click', e => { if (!e.target.closest('#osd')) { togglePlay(); showOsd(); } });
+
+/* ================= Senderliste im Player (◀) ================= */
+let clistOpen = false;
+const cl = { ids: [], sel: 0, group: '' };
+const CL_ROWS = 8;
+function openClist() {
+  const ch = byId(currentId);
+  if (!ch || clistOpen) return;
+  cl.group = ch.group;
+  cl.ids = state.channels.filter(c => c.group === ch.group).map(c => c.id);
+  cl.sel = Math.max(0, cl.ids.indexOf(currentId));
+  clistOpen = true;
+  pushOverlay('clist');
+  $('#osd').classList.add('hide');
+  $('#pList').classList.remove('hidden');
+  renderClist();
+}
+function closeClist(fromPop) {
+  if (!clistOpen) return;
+  clistOpen = false;
+  $('#pList').classList.add('hidden');
+  if (!fromPop) popOverlay('clist');
+  showOsd();
+}
+function renderClist() {
+  const n = cl.ids.length;
+  const a = Math.max(0, Math.min(cl.sel - Math.floor(CL_ROWS / 2), n - CL_ROWS)), b = Math.min(n, a + CL_ROWS);
+  let rows = '';
+  for (let i = a; i < b; i++) {
+    const c = byId(cl.ids[i]);
+    if (!c) continue;
+    const ep = EPG.now(c.id), prog = ep && ep.cur ? ep.cur.t : '';
+    EPG.want(c);
+    rows += `<div class="cl-row ${i === cl.sel ? 'on' : ''} ${c.id === currentId ? 'cur' : ''}" data-cl="${i}">
+      <div class="cl-logo"><span>${esc(initials(c.name))}</span>${c.logo ? `<img src="${esc(c.logo)}" alt="" onerror="this.remove()">` : ''}</div>
+      <div class="cl-txt"><b>${esc(c.name)}</b>${prog ? `<small>${esc(prog)}</small>` : ''}</div>
+      ${c.id === currentId ? '<span class="cl-live">LIVE</span>' : ''}
+    </div>`;
+  }
+  $('#pList').innerHTML = `<div class="cl-head"><span class="eyebrow">${esc(cl.group)}</span><span class="cl-pos">${n ? cl.sel + 1 : 0} / ${n}</span></div>
+    ${a > 0 ? '<div class="cl-more">▲</div>' : ''}<div class="cl-rows">${rows}</div>${b < n ? '<div class="cl-more">▼</div>' : ''}
+    <div class="cl-hint">▲▼ wählen · OK umschalten · ◀ schließen</div>`;
+}
+function clistMove(d) {
+  const n = cl.ids.length;
+  if (!n) return;
+  cl.sel = Math.max(0, Math.min(n - 1, cl.sel + d));
+  renderClist();
+}
+function clistKey(e) {
+  const k = e.key;
+  e.preventDefault();
+  if (['Escape', 'Backspace', 'GoBack', 'BrowserBack', 'ArrowLeft'].includes(k)) return closeClist();
+  if (k === 'ArrowUp') return clistMove(-1);
+  if (k === 'ArrowDown') return clistMove(1);
+  if (['PageUp', 'ChannelUp', 'MediaRewind'].includes(k)) return clistMove(-CL_ROWS);
+  if (['PageDown', 'ChannelDown', 'MediaFastForward'].includes(k)) return clistMove(CL_ROWS);
+  if (k === 'Enter' || k === ' ') {
+    const id = cl.ids[cl.sel];
+    if (id && id !== currentId) openPlayer(id);
+    renderClist();
+  }
+}
+$('#pList').addEventListener('click', e => {
+  e.stopPropagation();
+  const r = e.target.closest('[data-cl]');
+  if (!r) return;
+  cl.sel = Number(r.dataset.cl);
+  const id = cl.ids[cl.sel];
+  if (id && id !== currentId) openPlayer(id);
+  renderClist();
+});
 
 /* ================= Tonspur & Untertitel (Menü-Taste ≡) ================= */
 let menuOpen = false;
