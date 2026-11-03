@@ -351,6 +351,15 @@ const TM = {
     this.details_[k] = d;
     return d;
   },
+  /** Folgen einer Staffel: Nummer → { still, name, ov } */
+  async season(id, n) {
+    const k = `season:${id}:${n}`;
+    if (this.details_[k]) return this.details_[k];
+    const j = await this.get(`/tv/${id}/season/${n}`);
+    const m = {};
+    for (const e of j.episodes || []) m[e.episode_number] = { still: e.still_path || '', name: e.name || '', ov: e.overview || '' };
+    return (this.details_[k] = m);
+  },
   pickLogo(d) {
     const logos = (d.images && d.images.logos) || [];
     const rank = o => o.iso_639_1 == null ? 1 : o.iso_639_1 === 'de' ? 3 : o.iso_639_1 === 'en' ? 2 : 0;

@@ -159,6 +159,7 @@ const XS = {
           id: String(e.id), num: Number(e.episode_num) || i + 1, season: num,
           title: this.epTitle(e.title, Number(e.episode_num) || i + 1),
           plot: (e.info && e.info.plot) || '',
+          img: (e.info && (e.info.movie_image || e.info.cover_big)) || '',
           dur: (e.info && (Number(e.info.duration_secs) || this.secs(e.info.duration))) || 0,
           url: `${acc.base}/series/${acc.u}/${acc.p}/${e.id}.${e.container_extension || 'mp4'}`
         })).sort((a, b) => a.num - b.num)

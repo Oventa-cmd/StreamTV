@@ -723,69 +723,113 @@ function resumeEp(info) {
   if (idx < 0) return null;
   return VP.done(all[idx].id) ? all[idx + 1] || null : all[idx];
 }
+const GENERIC_EP = /^(folge|episode|ep\.?)\s*\d+$/i;
+/** Folge mit TMDB-Infos anreichern (Standbild, Titel, Beschreibung). */
+function epView(e) {
+  const t = ip && ip.tm && ip.tm[e.season] && ip.tm[e.season][e.num];
+  const title = t && t.name && !GENERIC_EP.test(t.name) && (GENERIC_EP.test(e.title) || !e.title) ? t.name : e.title || (t && t.name) || `Folge ${e.num}`;
+  const img = t && t.still ? `${TM.IMG}w300${t.still}` : e.img || '';
+  return { title, img, plot: e.plot || (t && t.ov) || '' };
+}
+function loadSeasonTm(n) {
+  if (!ip || ip.p.type !== 'tv' || !(ip.p.id > 0) || !TM.key()) return;
+  ip.tm = ip.tm || {};
+  if (ip.tm[n] || (ip.tmBusy || {})[n]) return;
+  (ip.tmBusy = ip.tmBusy || {})[n] = true;
+  const tok = ip.token;
+  TM.season(ip.p.id, n).then(m => { if (ip && ip.token === tok) { ip.tm[n] = m; if (ip.status === 'show' && ip.season === n) renderIptv(); } }).catch(() => {});
+}
 function renderIptv(focusResume) {
   if (!ip) return;
   const { p } = ip;
   const focusedKey = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.ipk;
   const accNames = [...new Set(XS.accounts().map(a => a.name))].join(', ');
   const film = p.type === 'movie';
-  let body = '', sub = '';
+  const d = ip.d || TM.details_[p.type + ':' + p.id] || null;
+  let body = '', sub = '', ov = '';
+  const btns = [];
   if (ip.status === 'loading') sub = `Durchsuche den ${film ? 'Filmkatalog' : 'Serienkatalog'} von ${accNames || 'deinem Anbieter'} … (beim ersten Mal etwas länger)`;
   else if (ip.status === 'error') sub = ip.msg;
   else if (ip.status === 'empty') sub = `${film ? 'Dieser Film' : 'Diese Serie'} wurde im Katalog deines Anbieters nicht gefunden.`;
   else if (ip.status === 'list') sub = `${ip.hits.length} mögliche Treffer – bitte auswählen`;
-  else if (ip.status === 'loadingShow') sub = `Lade ${film ? 'Film' : 'Folgen von'} „${ip.sel.it.name}“ …`;
-  else if (ip.status === 'show' && ip.info.movie) {
-    const e = ip.info.seasons[0].eps[0];
-    sub = [ip.sel.it.name, ip.sel.it.year, e.dur ? Math.round(e.dur / 60) + ' Min.' : '', ip.sel.acc.name].filter(Boolean).join(' · ');
-  } else if (ip.status === 'show') {
-    const n = ip.info.seasons.reduce((a, s) => a + s.eps.length, 0);
-    sub = `${ip.sel.it.name} · ${ip.info.seasons.length} Staffel${ip.info.seasons.length > 1 ? 'n' : ''} · ${n} Folgen · ${ip.sel.acc.name}`;
+  else if (ip.status === 'loadingShow') sub = `Lade ${film ? 'Film' : 'Folgen von'} „${cleanName(ip.sel.it.name)}“ …`;
+  else if (ip.status === 'show') {
+    const year = ip.sel.it.year || (d && String(d.first_air_date || d.release_date || '').slice(0, 4)) || '';
+    ov = (d && d.overview) || '';
+    if (ip.info.movie) {
+      const e = ip.info.seasons[0].eps[0], v = VP.get(e.id), dur = e.dur || (v && v.dur) || 0;
+      sub = [year, dur ? (Math.floor(dur / 3600) ? Math.floor(dur / 3600) + ' Std. ' : '') + Math.round(dur % 3600 / 60) + ' Min.' : '', ip.sel.acc.name].filter(Boolean).join(' · ');
+      ov = ov || e.plot;
+      const resume = v && v.pos > 30 && !VP.done(e.id);
+      btns.push(`<button class="btn primary focusable" data-ipk="play" data-ip="ep" data-s="0" data-i="0">▶ ${resume ? 'Weiterschauen ab ' + fmtTime(v.pos) : 'Abspielen'}</button>`);
+      if (resume) btns.push(`<button class="btn focusable" data-ipk="restart" data-ip="restart" data-s="0" data-i="0">↺ Von vorne</button>`);
+      if (resume) body = `<div class="ep-moviebar"><span class="ip-pbar"><i style="width:${Math.min(100, v.pos / v.dur * 100).toFixed(1)}%"></i></span><small>noch ${Math.max(1, Math.round((v.dur - v.pos) / 60))} Min.</small></div>`;
+    } else {
+      const n = ip.info.seasons.reduce((a, s) => a + s.eps.length, 0), ns = ip.info.seasons.filter(s => s.num).length;
+      sub = [year, ns ? `${ns} Staffel${ns > 1 ? 'n' : ''}` : '', `${n} Folgen`, ip.sel.acc.name].filter(Boolean).join(' · ');
+      const all = ip.info.seasons.flatMap(s => s.eps), r = resumeEp(ip.info) || all[0];
+      const rv = VP.get(r.id), cont = rv && rv.pos > 30 && !VP.done(r.id);
+      const si = ip.info.seasons.find(s => s.num === r.season).eps.indexOf(r);
+      btns.push(`<button class="btn primary focusable" data-ipk="play" data-ip="ep" data-s="${r.season}" data-i="${si}">▶ ${cont ? 'Weiterschauen' : 'Abspielen'} · ${r.season ? 'S' + r.season + ':' : ''}F${r.num}</button>`);
+      if (cont) btns.push(`<button class="btn focusable" data-ipk="restart" data-ip="restart" data-s="${r.season}" data-i="${si}">↺ Folge von vorne</button>`);
+      // Staffeln links, Folgen rechts
+      const season = ip.info.seasons.find(s => s.num === ip.season) || ip.info.seasons[0];
+      loadSeasonTm(season.num);
+      const col = ip.info.seasons.length > 1 ? `<div class="ep-seasons">${ip.info.seasons.map(s => {
+        const seen = s.eps.filter(e => VP.done(e.id)).length;
+        return `<button class="ep-season focusable ${s.num === season.num ? 'active' : ''}" data-ipk="s${s.num}" data-ip="season" data-s="${s.num}">
+          <b>${s.num ? 'Staffel ' + s.num : 'Extras'}</b><small>${s.eps.length} Folgen${seen ? ` · ${seen} gesehen` : ''}</small></button>`;
+      }).join('')}</div>` : '';
+      const rows = season.eps.map((e, i) => {
+        const v = VP.get(e.id), done = VP.done(e.id), x = epView(e);
+        const dur = e.dur || (v && v.dur) || 0, pct = v && v.dur ? Math.min(100, v.pos / v.dur * 100) : 0;
+        const state = done ? '<span class="ep-st ok">✓ Gesehen</span>' : v && v.pos > 30 ? `<span class="ep-st go">Weiter bei ${fmtTime(v.pos)}</span>` : '';
+        return `<button class="ep focusable ${done ? 'seen' : ''}" data-ipk="e${e.id}" data-ip="ep" data-s="${season.num}" data-i="${i}">
+          <span class="ep-thumb">${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<span class="ep-n">${e.num}</span><span class="ep-play">▶</span>
+            ${pct > 0 && !done ? `<span class="ep-bar"><i style="width:${pct.toFixed(1)}%"></i></span>` : ''}</span>
+          <span class="ep-txt"><span class="ep-top"><b>${e.num}. ${esc(x.title)}</b>${dur ? `<span class="ep-dur">${Math.round(dur / 60)} Min.</span>` : ''}</span>
+            ${x.plot ? `<span class="ep-plot">${esc(x.plot)}</span>` : ''}${state}</span>
+        </button>`;
+      }).join('');
+      body = `<div class="ep-cols ${col ? '' : 'single'}">${col}<div class="ep-list">${rows}</div></div>`;
+    }
   }
-  const btns = [`<button class="btn small focusable" data-ipk="back" data-ip="back">‹ Zurück</button>`];
-  if (ip.sel && ip.hits.length > 1) btns.push(`<button class="btn small focusable" data-ipk="hits" data-ip="hits">Andere Treffer (${ip.hits.length})</button>`);
-  if (['error', 'empty'].includes(ip.status)) btns.push(`<button class="btn small focusable" data-ipk="retry" data-ip="retry">Erneut versuchen</button>`,
-    `<button class="btn small focusable" data-ipk="live" data-livesearch="${esc(p.title)}">Im Live-TV suchen</button>`);
+  if (ip.sel && ip.hits.length > 1) btns.push(`<button class="btn focusable" data-ipk="hits" data-ip="hits">Andere Treffer (${ip.hits.length})</button>`);
+  if (['error', 'empty'].includes(ip.status)) btns.push(`<button class="btn focusable" data-ipk="retry" data-ip="retry">Erneut versuchen</button>`,
+    `<button class="btn focusable" data-ipk="live" data-livesearch="${esc(p.title)}">Suchen</button>`);
+  if (ip.status !== 'show') btns.push(`<button class="btn focusable" data-ipk="back" data-ip="back">‹ Zurück</button>`);
 
   if (ip.status === 'list') {
     body = `<div class="group ip-list">${ip.hits.map((h, i) => `
       <button class="row-btn focusable" data-ipk="hit${i}" data-ip="hit" data-i="${i}">
         <span class="lbl"><b>${esc(h.it.name)}</b><small>${esc([h.it.cat, h.it.year, h.acc.name].filter(Boolean).join(' · '))}</small></span><span class="chev">›</span>
       </button>`).join('')}</div>`;
-  } else if (ip.status === 'show') {
-    const season = ip.info.seasons.find(s => s.num === ip.season) || ip.info.seasons[0];
-    const chips = ip.info.seasons.length > 1 ? `<div class="ip-seasons">${ip.info.seasons.map(s =>
-      `<button class="chip focusable ${s.num === season.num ? 'active' : ''}" data-ipk="s${s.num}" data-ip="season" data-s="${s.num}">${s.num ? 'Staffel ' + s.num : 'Extras'}</button>`).join('')}</div>` : '';
-    body = chips + `<div class="group ip-list">${season.eps.map((e, i) => {
-      const v = VP.get(e.id), done = VP.done(e.id);
-      const dur = e.dur || (v && v.dur) || 0;
-      const right = done ? '<span class="ip-done">✓ Gesehen</span>' : v && v.pos > 30 ? `<span class="ip-resume">Weiter bei ${fmtTime(v.pos)}</span>` : '<span class="chev">▶</span>';
-      const pct = v && v.dur ? Math.min(100, v.pos / v.dur * 100) : 0;
-      return `<button class="row-btn ip-ep focusable" data-ipk="e${e.id}" data-ip="ep" data-s="${season.num}" data-i="${i}">
-        <span class="lbl"><b>${e.movie ? '▶ Film abspielen' : `${e.num}. ${esc(e.title)}`}</b><small>${esc([dur ? Math.round(dur / 60) + ' Min.' : '', e.plot].filter(Boolean).join(' · '))}</small>
-        ${pct > 0 && !done ? `<span class="ip-pbar"><i style="width:${pct.toFixed(1)}%"></i></span>` : ''}</span>${right}
-      </button>`;
-    }).join('')}</div>`;
   } else if (ip.status === 'loading' || ip.status === 'loadingShow') {
-    body = `<div class="group ip-list">${'<div class="row-item ip-skel"></div>'.repeat(4)}</div>`;
+    body = `<div class="ep-cols single"><div class="ep-list">${'<div class="ep skel"><span class="ep-thumb"></span><span class="ep-txt"></span></div>'.repeat(3)}</div></div>`;
   }
+  const logo = d && TM.pickLogo(d);
   $('#sheetInner').innerHTML = `
     <div class="ip-head">
-      <div class="eyebrow">Beim Anbieter · ${film ? 'IPTV-Filme' : 'IPTV-Serien'}</div>
-      <h1>${esc(p.title)}</h1>
+      <div class="eyebrow">${film ? 'Film' : 'Serie'} · bei deinem Anbieter</div>
+      ${logo ? `<img class="ep-logo" src="${TM.IMG}w500${logo}" alt="">` : `<h1>${esc(p.title)}</h1>`}
       <div class="meta ${ip.status === 'error' ? 'err' : ''}">${esc(sub)}</div>
+      ${ov ? `<p class="ep-ov">${esc(ov)}</p>` : ''}
       <div class="btn-row">${btns.join('')}</div>
     </div>
     <div class="ip-body">${body}</div>`;
+  if (ip.status === 'show' && !ip.d && p.id > 0 && !ip.dBusy && TM.key()) {   // Beschreibung & Logo nachladen
+    ip.dBusy = true; const tok = ip.token;
+    TM.details(p.type, p.id).then(det => { if (ip && ip.token === tok) { ip.d = det; renderIptv(); } }).catch(() => {});
+  }
   const same = ip.shown === ip.status;
   ip.shown = ip.status;
   let target = same && focusedKey && $(`#sheet [data-ipk="${CSS.escape(focusedKey)}"]`);
-  if (!target && ip.status === 'show' && (focusResume || !same)) {
-    const r = resumeEp(ip.info);
-    target = (r && $(`#sheet [data-ipk="e${CSS.escape(r.id)}"]`)) || $('#sheet .ip-ep');
-  }
+  if (!target && ip.status === 'show' && (focusResume || !same)) target = $('#sheet [data-ipk="play"]');
   if (!target) target = $('#sheet .ip-list .focusable') || $('#sheet .ip-head .focusable');
-  if (target) { target.focus({ preventScroll: true }); target.scrollIntoView({ block: 'nearest' }); }
+  if (target) {
+    target.focus({ preventScroll: true });
+    if (target.closest('.ip-head')) $('#sheetInner').scrollTop = 0; else target.scrollIntoView({ block: 'nearest' });
+  }
 }
 function closeIptv(fromPop) {
   if (!ip) return;
@@ -799,8 +843,8 @@ function closeIptv(fromPop) {
   if (!fromPop) popOverlay('iptv');
   if (sheetOpen) { renderSheet(p, TM.details_[p.type + ':' + p.id]); const b = $('#shIptv'); if (b) b.focus({ preventScroll: true }); }
 }
-function iptvClick(el) {
-  const a = el.dataset.ip;
+function iptvClick(el, epArg) {
+  const a = epArg ? 'ep' : el.dataset.ip;
   if (a === 'back') return closeIptv();
   if (a === 'retry') {
     if (ip.cat) { ip.token = Date.now(); return selectHit(0); }
@@ -809,9 +853,14 @@ function iptvClick(el) {
   if (a === 'hits') { ip.sel = null; ip.info = null; ip.status = 'list'; return renderIptv(); }
   if (a === 'hit') return selectHit(Number(el.dataset.i));
   if (a === 'season') { ip.season = Number(el.dataset.s); renderIptv(); const c = $(`#sheet [data-ipk="s${ip.season}"]`); if (c) c.focus({ preventScroll: true }); return; }
+  if (a === 'restart') {
+    const ep = ip.info.seasons.find(s => s.num === Number(el.dataset.s)).eps[Number(el.dataset.i)];
+    const v = VP.get(ep.id); if (v) VP.set(ep.id, 0, v.dur);
+    return iptvClick(el, ep);
+  }
   if (a === 'ep') {
     const all = ip.info.seasons.flatMap(s => s.eps);
-    const ep = ip.info.seasons.find(s => s.num === Number(el.dataset.s)).eps[Number(el.dataset.i)];
+    const ep = epArg || ip.info.seasons.find(s => s.num === Number(el.dataset.s)).eps[Number(el.dataset.i)];
     const p = ip.p, h = ip.sel;
     const img = p.backdrop ? `${TM.IMG}w780${p.backdrop}` : p.poster ? `${TM.IMG}w500${p.poster}` : h.it.cover || '';
     openVod(all, all.indexOf(ep), h.it.name, { acc: h.acc.key, sid: (ep.movie ? 'm' : '') + h.it.sid, img, src: h.acc.name, name: p.title, tmdb: p.id ? p.type + ':' + p.id : '' });
@@ -2277,6 +2326,7 @@ function navigate(dir) {
   }
   if (!best) return;
   if (best.closest('.tabbar') && !cur.closest('.tabbar')) best = $('.tabbar button.active') || best;
+  if (best.closest('.ep-seasons') && cur.closest('.ep-list')) best = $('#sheet .ep-season.active') || best;
   best.focus({ preventScroll: true });
   if (best.closest('header')) return;
   // Oberste Zeile der Seite erreicht → ganz nach oben (Billboard, Überschriften sichtbar)
