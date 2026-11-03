@@ -9,6 +9,8 @@ IPTV-Player für Fire TV / Android TV im Apple-Stil (WebView-App, Oberfläche li
 - HLS (hls.js) und MPEG-TS (mpegts.js) gebündelt, automatischer Wechsel bei Problemen
 - **EPG:** laufende Sendung auf jeder Senderkachel; im Player „Jetzt / Danach“ mit Uhrzeit und Fortschritt (Xtream `get_short_epg`, gecacht)
 - **Senderliste im Player:** ◀ öffnet die Sender der aktuellen Kategorie samt EPG; ▲▼ wählen, OK umschalten
+- **Auto-Reconnect:** bricht ein Stream ab oder hängt, verbindet die App still neu (1–30 s Pause, max. 6 Versuche); Serien/Filme laufen an derselben Stelle weiter
+- **Kategorien ausblenden:** Einstellungen → Inhalte; Schnellauswahl nach Sprache/Land (z. B. alle „AR |“-Kategorien), wirkt auf Live-TV, Suche und Serien-Reiter
 
 **Serien & Filme vom Anbieter**
 - **Reiter „Serien“:** kompletter Xtream-Serienkatalog mit Covern, Kategorie-Chips, Filter; auch große Kataloge (20.000+) laufen flüssig
