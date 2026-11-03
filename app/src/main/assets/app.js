@@ -198,13 +198,41 @@ function removeSource(id) {
 
 /* ================= Rendering: Kacheln ================= */
 function tileHTML(c) {
+  const n = EPG.now(c.id), prog = n && n.cur ? n.cur.t : '';
   return `<div class="tile focusable" tabindex="0" data-card="${esc(c.id)}">
     <div class="art"><span class="ini">${esc(initials(c.name))}</span>
       ${c.logo ? `<img class="logo" src="${esc(c.logo)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
       <button class="star ${isFav(c.id) ? 'on' : ''}" tabindex="-1" data-fav="${esc(c.id)}" aria-label="Favorit">★</button>
     </div>
-    <div class="caption">${esc(c.name)}</div>
+    <div class="caption">${esc(c.name)}</div>${prog ? `<div class="sub">${esc(prog)}</div>` : ''}
   </div>`;
+}
+/* ---------- EPG auf Kacheln und im Player ---------- */
+function epgPatch(id) {
+  const n = EPG.now(id), t = n && n.cur ? n.cur.t : '';
+  for (const el of document.querySelectorAll(`.tile[data-card="${CSS.escape(id)}"]`)) {
+    let sub = el.querySelector('.sub');
+    if (!t) { if (sub) sub.remove(); continue; }
+    if (!sub) { sub = document.createElement('div'); sub.className = 'sub'; el.appendChild(sub); }
+    if (sub.textContent !== t) sub.textContent = t;
+  }
+  if (playerOpen && id === currentId) renderOsdEpg();
+}
+function renderOsdEpg() {
+  const box = $('#pEpg'), n = !vod && currentId ? EPG.now(currentId) : null;
+  box.classList.toggle('hidden', !n);
+  if (!n) return;
+  const now = Date.now() / 1000, c = n.cur, x = n.next;
+  $('#eNowRow').classList.toggle('hidden', !c);
+  $('#eProg').classList.toggle('hidden', !c);
+  $('#eNextRow').classList.toggle('hidden', !x);
+  if (c) {
+    $('#eNowT').textContent = `${hhmm(c.s)}–${hhmm(c.e)}`;
+    $('#eNow').textContent = c.t;
+    $('#eBar').style.width = Math.min(100, Math.max(0, (now - c.s) / (c.e - c.s) * 100)).toFixed(1) + '%';
+    $('#eLeft').textContent = `noch ${Math.max(1, Math.round((c.e - now) / 60))} Min.`;
+  }
+  if (x) { $('#eNextT').textContent = hhmm(x.s); $('#eNext').textContent = x.t; }
 }
 function showTileHTML(p, rank) {
   const img = p.backdrop ? `${TM.IMG}w780${p.backdrop}` : p.poster ? `${TM.IMG}w500${p.poster}` : '';
@@ -262,6 +290,7 @@ function renderHome() {
       (list.length > GRID_MAX ? `<p class="empty">Weitere ${list.length - GRID_MAX} Sender über die Suche.</p>` : '');
   }
   $('#homeRows').innerHTML = rows || `<p class="empty">Noch keine Sender. Unter „Einstellungen“ eine M3U-Playlist oder einen Xtream-Zugang hinzufügen.</p>`;
+  EPG.scan();
   if (!heroItems.length) renderHero();
 }
 function discoverRowsHTML(ids) {
@@ -292,6 +321,7 @@ function renderSearch() {
   $('#searchInfo').textContent = q ? `${res.length} Sender` + (res.length > GRID_MAX ? ` – die ersten ${GRID_MAX} werden angezeigt` : '') : '';
   $('#searchGrid').innerHTML = !q ? `<p class="empty">Sender, Kategorie, Serie oder Film eingeben.</p>`
     : res.length ? res.slice(0, GRID_MAX).map(tileHTML).join('') : '';
+  EPG.scan();
 }
 let searchTimer = null;
 function searchShows() {
@@ -310,6 +340,7 @@ function renderFavs() {
   const f = favList();
   $('#favGrid').innerHTML = f.length ? f.map(tileHTML).join('')
     : `<p class="empty">Noch keine Favoriten. Auf einem Sender die Menü-Taste (≡) drücken oder im Player ☆ wählen.</p>`;
+  EPG.scan();
 }
 function srcName(id) {
   if (id === 'manual') return 'Manuell';
@@ -694,6 +725,7 @@ function show(view) {
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   window.scrollTo(0, 0);
+  EPG.scan();
   const tab = $(`.tabbar [data-view="${view}"]`);
   if (tab) tab.focus({ preventScroll: true });
 }
@@ -779,6 +811,8 @@ function openPlayer(id) {
   $('#pGroup').textContent = ch.group;
   $('#pFav').textContent = isFav(id) ? '★' : '☆';
   $('#pLogo').innerHTML = ch.logo ? `<img src="${esc(ch.logo)}" alt="" onerror="this.remove()">` : esc(initials(ch.name));
+  EPG.want(ch, true);
+  renderOsdEpg();
   loadStream(ch.url);
   showOsd();
 }
@@ -796,6 +830,7 @@ function setVod(v) {
   vod = v;
   $('#player').classList.toggle('vod', !!v);
   $('#pProg').classList.toggle('hidden', !v);
+  if (v) $('#pEpg').classList.add('hidden');
   $('#pFav').classList.toggle('hidden', !!v);
   $('#pSub').textContent = v ? (v.ep.movie ? '◀▶ Spulen · OK Pause · Zurück schließen' : '◀▶ Spulen · ▲▼ Folge wechseln · OK Pause · Zurück schließen')
     : '▲▼ Sender wechseln · OK Pause · Zurück schließen';
@@ -1183,6 +1218,15 @@ function tick() { $('#clock').textContent = new Date().toLocaleTimeString('de-DE
 
 /* ================= Start ================= */
 load();
+EPG.load();
+EPG.onUpdate(epgPatch);
+document.addEventListener('scroll', () => EPG.scan(), true);
+setInterval(() => {   // laufende Sendung aktuell halten
+  const ids = new Set($$('.tile[data-card]').map(t => t.dataset.card));
+  ids.forEach(epgPatch);
+  if (playerOpen && !vod) { renderOsdEpg(); EPG.want(byId(currentId)); }
+  EPG.scan();
+}, 60000);
 WL.load();
 TM.load();
 persist();

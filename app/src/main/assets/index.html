@@ -178,6 +178,11 @@
       <div class="eyebrow" id="pGroup"></div>
       <h3 id="pTitle"></h3>
       <div class="osd-prog hidden" id="pProg"><div class="bar"><i id="pBar"></i></div><span id="pTime"></span></div>
+      <div class="osd-epg hidden" id="pEpg">
+        <div class="epg-row" id="eNowRow"><span class="epg-lbl">Jetzt</span><span class="epg-tm" id="eNowT"></span><b id="eNow"></b></div>
+        <div class="osd-prog" id="eProg"><div class="bar"><i id="eBar"></i></div><span id="eLeft"></span></div>
+        <div class="epg-row next" id="eNextRow"><span class="epg-lbl">Danach</span><span class="epg-tm" id="eNextT"></span><span id="eNext"></span></div>
+      </div>
       <div class="osd-sub" id="pSub">▲▼ Sender wechseln · OK Pause · Zurück schließen</div>
     </div>
     <div class="osd-btns">
@@ -191,6 +196,7 @@
 
 <script src="tmdb.js"></script>
 <script src="series.js"></script>
+<script src="epg.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

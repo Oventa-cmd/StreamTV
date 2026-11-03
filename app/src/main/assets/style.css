@@ -277,3 +277,14 @@ button.pill:focus{background:#fff;color:#000}
 .osd-prog .bar{flex:1;height:.3rem;border-radius:1rem;background:rgba(255,255,255,.2);overflow:hidden}
 .osd-prog .bar i{display:block;height:100%;width:0;background:#fff;transition:width .3s linear}
 .osd-prog span{font-size:.8rem;font-weight:600;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* Player: Programm (EPG) im Live-Modus */
+.osd-epg{margin-top:.4rem;font-size:.85rem}
+.epg-row{display:flex;align-items:baseline;gap:.55rem;min-width:0;white-space:nowrap}
+.epg-row b,.epg-row span:last-child{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.epg-row b{font-weight:600}
+.epg-row.next{color:var(--mut);margin-top:.1rem}
+.epg-lbl{flex:0 0 auto;font-size:.68rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--mut2)}
+.epg-tm{flex:0 0 auto;font-variant-numeric:tabular-nums;color:var(--mut)}
+.osd-epg .osd-prog{margin:.3rem 0}
+.osd-epg .osd-prog .bar i{background:var(--red)}
