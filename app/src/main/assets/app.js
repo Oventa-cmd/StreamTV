@@ -1535,7 +1535,8 @@ function showOsd() {
   if (clistOpen) { o.classList.add('hide'); return; }
   o.classList.remove('hide');
   clearTimeout(osdTimer);
-  osdTimer = setTimeout(() => o.classList.add('hide'), 4500);
+  osdTimer = setTimeout(() => { o.classList.add('hide'); checkSkip(); }, 4500);
+  checkSkip();
 }
 function openPlayer(id) {
   const ch = byId(id);
@@ -1607,7 +1608,7 @@ function saveVodPos(asDone) {
 }
 /* ---------- Intro, Rückblick, Abspann überspringen ---------- */
 // Quellen: TheIntroDB → selbst gelernt pro Serie → Faustregel (siehe skip.js)
-const INTRO_WINDOW = 300, INTRO_SKIP = 85, INTRO_SHOW = 10000;
+const INTRO_WINDOW = 300, INTRO_SKIP = 85;
 let skipKind = null, skipSeg = null, skipTimer = null, skipShownAt = 0;
 const outroLen = d => Math.max(60, Math.min(150, d * 0.04));
 /** Schlüssel zum Lernen: TMDB-Serie, sonst Anbieter-Serie. */
@@ -1622,20 +1623,22 @@ async function loadSegments(v) {
   if (db && db.recap && db.recap.e) segs.push({ kind: 'recap', from: db.recap.s, to: db.recap.e, target: db.recap.e, src: 'db' });
   if (db && db.intro) segs.push({ kind: 'intro', from: db.intro.s, to: db.intro.e || d, target: db.intro.e || d, src: 'db' });
   else if (!v.ep.movie && L.intro) segs.push({ kind: 'intro', from: Math.max(0, L.intro.s - 10), to: L.intro.e, target: L.intro.e, src: 'learn' });
-  else if (!v.ep.movie && d > 180) segs.push({ kind: 'intro', from: 0, to: Math.min(INTRO_WINDOW, d * 0.3), target: null, timeout: INTRO_SHOW, src: 'auto' });
+  else if (!v.ep.movie && d > 180) segs.push({ kind: 'intro', from: 0, to: Math.min(INTRO_WINDOW, d * 0.3), target: null, osd: true, src: 'auto' });
   if (db && db.credits) {
     const post = db.credits.e && db.credits.e < d - 10;   // Szene nach dem Abspann
     segs.push({ kind: 'outro', from: db.credits.s, to: post ? db.credits.e : d, target: post ? db.credits.e : null, src: 'db' });
   } else if (L.outro && !v.ep.movie && L.outro < d * 0.5) segs.push({ kind: 'outro', from: d - L.outro, to: d, target: null, src: 'learn' });
   else if (d > 120) segs.push({ kind: 'outro', from: d - outroLen(d), to: d, target: null, src: 'auto' });
   v.segs = segs; v.segReady = true;
+  // Fortgesetzt hinter Intro/Rückblick → dafür nicht mehr fragen
+  if (v.startAt > 0) for (const sg of segs) if (sg.kind !== 'outro' && v.startAt > sg.from + 2) v.used[sg.kind] = true;
   checkSkip();
 }
 function showSkip(seg) {
   const b = $('#pSkip');
   skipSeg = seg; skipKind = seg.kind; skipShownAt = Date.now();
   const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length && seg.target == null;
-  b.innerHTML = seg.kind === 'intro' ? 'Intro überspringen <span>⏭</span>'
+  b.innerHTML = seg.kind === 'intro' ? (seg.osd ? 'Intro überspringen <span>⏩</span>' : 'Intro überspringen <span>⏭</span>')
     : seg.kind === 'recap' ? 'Rückblick überspringen <span>⏭</span>'
     : next ? 'Nächste Folge <span>▶</span>' : 'Abspann überspringen <span>⏭</span>';
   b.dataset.src = seg.src;
@@ -1651,7 +1654,8 @@ function hideSkip() {
 function checkSkip() {
   if (!vod || menuOpen || !vod.segReady) return;
   const t = video.currentTime || 0;
-  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind]).sort((a, b) => b.from - a.from)[0] || null;
+  const osdOn = vod.touched && !$('#osd').classList.contains('hide') && !video.paused;
+  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind] && (!s.osd || osdOn)).sort((a, b) => b.from - a.from)[0] || null;
   if (cur && skipSeg !== cur) showSkip(cur);
   else if (!cur && skipSeg) hideSkip();
 }
@@ -1773,9 +1777,11 @@ video.addEventListener('loadedmetadata', () => {
   if (!vod || vod.resumed) return;
   vod.resumed = true;
   const v0 = vod;
-  setTimeout(() => { if (vod === v0 && !v0.segReady) loadSegments(v0); }, 0);
   const v = VP.get(vod.ep.id);
-  if (v && v.pos > 30 && !VP.done(vod.ep.id) && isFinite(video.duration)) {
+  const resume = !!(v && v.pos > 30 && !VP.done(vod.ep.id) && isFinite(video.duration));
+  v0.startAt = resume ? v.pos : 0;
+  setTimeout(() => { if (vod === v0 && !v0.segReady) loadSegments(v0); }, 0);
+  if (resume) {
     video.currentTime = v.pos;
     toast('Fortgesetzt bei ' + fmtTime(v.pos));
   }
@@ -1841,7 +1847,9 @@ function playerKey(e) {
   if (menuOpen) return menuKey(e);
   if (clistOpen) return clistKey(e);
   if (!vod && currentId && k === 'ArrowLeft') { e.preventDefault(); openClist(); return; }
-  if (skipKind && ['Enter', ' '].includes(k)) { e.preventDefault(); doSkip(); return; }
+  // Faustregel-Intro (Zeitpunkt unbekannt): ⏩ überspringt, OK bleibt Pause
+  if (skipSeg && skipSeg.osd && k === 'MediaFastForward') { e.preventDefault(); doSkip(); return; }
+  if (skipKind && !skipSeg.osd && ['Enter', ' '].includes(k)) { e.preventDefault(); doSkip(); return; }
   if (k === 'ContextMenu' || k === 'm' || k === 'M') { e.preventDefault(); openMenu(); return; }
   if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k)) { e.preventDefault(); closePlayer(); return; }
   if (vod && ['ArrowLeft', 'MediaRewind'].includes(k)) seek(k === 'MediaRewind' ? -30 : -10);
@@ -1852,8 +1860,11 @@ function playerKey(e) {
   else if (['f', 'F'].includes(k)) toggleFav(currentId);
   else return;
   e.preventDefault();
+  if (vod) vod.touched = true;   // Faustregel-Intro erst nach eigener Eingabe anbieten
   showOsd();
 }
+video.addEventListener('pause', () => checkSkip());
+video.addEventListener('play', () => checkSkip());
 video.addEventListener('waiting', () => { if (engine && !RC.waiting) setStatus('Puffern …'); });
 video.addEventListener('playing', () => {
   clearTimeout(startTimer); setStatus('');
@@ -2105,6 +2116,11 @@ function navigate(dir) {
   if (best.closest('.tabbar') && !cur.closest('.tabbar')) best = $('.tabbar button.active') || best;
   best.focus({ preventScroll: true });
   if (best.closest('header')) return;
+  // Oberste Zeile der Seite erreicht → ganz nach oben (Billboard, Überschriften sichtbar)
+  if (dir === 'ArrowUp' && !sheetOpen) {
+    const bt = best.getBoundingClientRect().top;
+    if (!all.some(el => el !== best && !el.closest('header') && el.getBoundingClientRect().top < bt - 4)) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  }
   best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
   // Zeilenüberschrift mit sichtbar halten (nicht unter der Kopfzeile verstecken)
   const sec = best.closest('.rail') ? best.closest('section') : null;
