@@ -297,3 +297,18 @@ button.pill:focus{background:#fff;color:#000}
 .tile.poster .ini{font-size:1.5rem}
 .tile.poster:focus .art{transform:scale(1.07) translateY(-.2rem)}
 #view-series .search{margin-bottom:.2rem}
+
+/* ---------- Player-Menü (Tonspur, Untertitel) ---------- */
+.pmenu{position:absolute;top:1.2rem;right:var(--pad);max-height:calc(100% - 2.4rem);width:min(22rem,46%);z-index:3;overflow-y:auto;scrollbar-width:none;padding:1rem .7rem;border-radius:var(--r-lg);
+  background:rgba(30,30,32,.72);-webkit-backdrop-filter:blur(34px) saturate(180%);backdrop-filter:blur(34px) saturate(180%);
+  border:1px solid var(--line);box-shadow:0 18px 50px rgba(0,0,0,.55);animation:fade .25s var(--ease)}
+.pmenu::-webkit-scrollbar{display:none}
+.pm-title{font-size:1.15rem;font-weight:700;padding:0 .6rem .4rem}
+.pm-h{color:var(--mut2);font-size:.72rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:.9rem .6rem .35rem}
+.pm-item{display:flex;align-items:center;gap:.5rem;width:100%;text-align:left;padding:.6rem .6rem;border-radius:var(--r-sm);font-weight:600;font-size:.92rem;transition:background .2s}
+.pm-item .ck{width:1rem;flex:0 0 auto;color:var(--accent);font-weight:800}
+.pm-item.muted{color:var(--mut)}
+.pm-item:focus{background:#fff;color:#000}
+.pm-item:focus .ck{color:#0060df}
+.pm-note{color:var(--mut);font-size:.8rem;line-height:1.45;padding:.6rem .6rem 0}
+video::cue{background:rgba(0,0,0,.65);font-family:Inter,sans-serif;font-size:1.05em}

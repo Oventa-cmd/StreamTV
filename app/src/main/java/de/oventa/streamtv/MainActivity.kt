@@ -105,6 +105,22 @@ class MainActivity : Activity() {
             return true
         }
 
+        /** Gibt es eine andere App, die Videos abspielen kann (z. B. VLC)? */
+        @JavascriptInterface
+        fun hasExternalPlayer(): Boolean = try {
+            packageManager.queryIntentActivities(videoIntent("http://localhost/x.mp4", "", 0.0), 0)
+                .any { it.activityInfo.packageName != packageName }
+        } catch (e: Exception) { false }
+
+        /** Stream in einer anderen App öffnen (Auswahldialog), Startposition in Millisekunden. */
+        @JavascriptInterface
+        fun openExternal(url: String, title: String, posMs: Double): Boolean = try {
+            val chooser = Intent.createChooser(videoIntent(url, title, posMs), "Abspielen mit")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runOnUiThread { try { startActivity(chooser) } catch (_: Exception) { } }
+            true
+        } catch (e: Exception) { false }
+
         @JavascriptInterface
         fun appVersion(): String = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: ""
@@ -130,6 +146,14 @@ class MainActivity : Activity() {
         pendingConfig = null
         web.evaluateJavascript("window.importConfig && importConfig(" + JSONObject.quote(cfg) + ")", null)
     }
+
+    private fun videoIntent(url: String, title: String, posMs: Double): Intent =
+        Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(Uri.parse(url), "video/*")
+            if (title.isNotEmpty()) putExtra("title", title)
+            if (posMs > 0) putExtra("position", posMs.toLong())   // VLC / MX Player: Startposition
+            putExtra("headers", arrayOf("User-Agent", "IPTVSmartersPlayer"))
+        }
 
     private fun launchIntent(pkg: String): Intent? =
         packageManager.getLeanbackLaunchIntentForPackage(pkg) ?: packageManager.getLaunchIntentForPackage(pkg)

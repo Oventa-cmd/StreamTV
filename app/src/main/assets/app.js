@@ -826,7 +826,8 @@ function popOverlay(name) {
 window.addEventListener('popstate', () => {
   if (skipPops > 0) { skipPops--; return; }
   const top = overlays.pop();
-  if (top === 'player') closePlayer(true);
+  if (top === 'pmenu') closeMenu(true);
+  else if (top === 'player') closePlayer(true);
   else if (top === 'iptv') closeIptv(true);
   else if (top === 'sheet') closeSheet(true);
 });
@@ -876,6 +877,8 @@ function startEngine(name, url, fail) {
     if (!window.Hls || !Hls.isSupported()) return fail();
     hls = new Hls({ enableWorker: true });
     hls.on(Hls.Events.MANIFEST_PARSED, () => safePlay(video));
+    hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => applyTrackPref());
+    hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => applyTrackPref());
     hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) fail(); });
     hls.loadSource(url);
     hls.attachMedia(video);
@@ -892,6 +895,7 @@ function startEngine(name, url, fail) {
   }
 }
 function loadStream(url) {
+  if (menuOpen) closeMenu();
   stopStream();
   const token = ++playToken;
   const list = enginesFor(url);
@@ -950,8 +954,8 @@ function setVod(v) {
   $('#pProg').classList.toggle('hidden', !v);
   if (v) $('#pEpg').classList.add('hidden');
   $('#pFav').classList.toggle('hidden', !!v);
-  $('#pSub').textContent = v ? (v.ep.movie ? '◀▶ Spulen · OK Pause · Zurück schließen' : '◀▶ Spulen · ▲▼ Folge wechseln · OK Pause · Zurück schließen')
-    : '▲▼ Sender wechseln · OK Pause · Zurück schließen';
+  $('#pSub').textContent = v ? (v.ep.movie ? '◀▶ Spulen · OK Pause · ≡ Optionen · Zurück schließen' : '◀▶ Spulen · ▲▼ Folge · OK Pause · ≡ Optionen · Zurück')
+    : '▲▼ Sender wechseln · OK Pause · ≡ Optionen · Zurück schließen';
 }
 /** ctx = Herkunft für „Weiterschauen“: { acc, sid, img, src } */
 function openVod(list, idx, show, ctx) {
@@ -1035,6 +1039,9 @@ function seek(sec) {
   video.currentTime = Math.max(0, Math.min(video.duration - 2, video.currentTime + sec));
   updateProg();
 }
+video.addEventListener('loadedmetadata', () => applyTrackPref());
+if (video.textTracks) video.textTracks.addEventListener('addtrack', () => applyTrackPref());
+if (video.audioTracks) video.audioTracks.addEventListener('addtrack', () => applyTrackPref());
 video.addEventListener('loadedmetadata', () => {
   if (!vod || vod.resumed) return;
   vod.resumed = true;
@@ -1060,6 +1067,11 @@ video.addEventListener('ended', () => {
 });
 function closePlayer(fromPop) {
   if (!playerOpen) return;
+  if (menuOpen) {   // Menü liegt noch auf dem Verlauf → beide Einträge auf einmal entfernen
+    menuOpen = false; $('#pMenu').classList.add('hidden');
+    const i = overlays.lastIndexOf('pmenu'); if (i >= 0) overlays.splice(i, 1);
+    if (!fromPop) { const j = overlays.lastIndexOf('player'); if (j >= 0) overlays.splice(j, 1); skipPops++; history.go(-2); fromPop = true; }
+  }
   const wasVod = !!vod;
   setVod(null);
   playerOpen = false;
@@ -1090,13 +1102,15 @@ function zap(step) {
 function togglePlay() { video.paused ? safePlay(video) : video.pause(); }
 function playerKey(e) {
   const k = e.key;
+  if (menuOpen) return menuKey(e);
+  if (k === 'ContextMenu' || k === 'm' || k === 'M') { e.preventDefault(); openMenu(); return; }
   if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k)) { e.preventDefault(); closePlayer(); return; }
   if (vod && ['ArrowLeft', 'MediaRewind'].includes(k)) seek(k === 'MediaRewind' ? -30 : -10);
   else if (vod && ['ArrowRight', 'MediaFastForward'].includes(k)) seek(k === 'MediaFastForward' ? 30 : 10);
   else if (['ArrowUp', 'ChannelUp', 'PageUp'].includes(k)) zap(-1);
   else if (['ArrowDown', 'ChannelDown', 'PageDown'].includes(k)) zap(1);
   else if (['Enter', ' ', 'MediaPlayPause'].includes(k)) togglePlay();
-  else if (['f', 'F', 'ContextMenu'].includes(k)) toggleFav(currentId);
+  else if (['f', 'F'].includes(k)) toggleFav(currentId);
   else return;
   e.preventDefault();
   showOsd();
@@ -1105,6 +1119,117 @@ video.addEventListener('waiting', () => { if (engine) setStatus('Puffern …'); 
 video.addEventListener('playing', () => { clearTimeout(startTimer); setStatus(''); });
 video.addEventListener('error', () => { if (engine === 'native' && failCb) failCb(); });
 $('#player').addEventListener('click', e => { if (!e.target.closest('#osd')) { togglePlay(); showOsd(); } });
+
+/* ================= Tonspur & Untertitel (Menü-Taste ≡) ================= */
+let menuOpen = false;
+const TRK = { KEY: 'streamtv.tracks', p: null };
+const LANG3 = { ger: 'de', deu: 'de', eng: 'en', fre: 'fr', fra: 'fr', spa: 'es', ita: 'it', tur: 'tr', pol: 'pl', rus: 'ru', ara: 'ar', dut: 'nl', nld: 'nl', por: 'pt', jpn: 'ja', kor: 'ko', chi: 'zh', zho: 'zh' };
+const LANGN = { de: 'Deutsch', en: 'Englisch', fr: 'Französisch', es: 'Spanisch', it: 'Italienisch', tr: 'Türkisch', pl: 'Polnisch', ru: 'Russisch', ar: 'Arabisch', nl: 'Niederländisch', pt: 'Portugiesisch', ja: 'Japanisch', ko: 'Koreanisch', zh: 'Chinesisch' };
+function langOf(l) { l = String(l || '').toLowerCase().split(/[-_]/)[0]; return LANG3[l] || l; }
+function trkPref() { if (!TRK.p) { try { TRK.p = JSON.parse(localStorage.getItem(TRK.KEY) || '{}'); } catch (e) { TRK.p = {}; } } return TRK.p; }
+function trkSave(k, v) { trkPref()[k] = v; try { localStorage.setItem(TRK.KEY, JSON.stringify(TRK.p)); } catch (e) {} }
+const trkLabel = (name, lang, i) => {
+  const l = langOf(lang), n = String(name || '').trim();
+  return n && !/^(track|spur|audio|subtitle)?\s*\d*$/i.test(n) ? n : LANGN[l] || (l ? l.toUpperCase() : `Spur ${i + 1}`);
+};
+/** Verfügbare Spuren der aktuellen Wiedergabe (hls.js oder nativ). */
+function getTracks() {
+  const audio = [], subs = [];
+  if (engine === 'hls' && hls) {
+    (hls.audioTracks || []).forEach((t, i) => audio.push({ label: trkLabel(t.name, t.lang, i), lang: langOf(t.lang), sel: hls.audioTrack === i, set: () => { hls.audioTrack = i; } }));
+    (hls.subtitleTracks || []).forEach((t, i) => subs.push({ label: trkLabel(t.name, t.lang, i), lang: langOf(t.lang), sel: hls.subtitleTrack === i && hls.subtitleDisplay !== false,
+      set: () => { hls.subtitleTrack = i; hls.subtitleDisplay = true; } }));
+    return { audio, subs, off: () => { hls.subtitleTrack = -1; }, offSel: hls.subtitleTrack < 0 };
+  }
+  const at = video.audioTracks;   // nur wenn die WebView es unterstützt
+  if (at && at.length) for (let i = 0; i < at.length; i++) {
+    const t = at[i];
+    audio.push({ label: trkLabel(t.label, t.language, i), lang: langOf(t.language), sel: t.enabled, set: () => { for (let j = 0; j < at.length; j++) at[j].enabled = j === i; } });
+  }
+  const tt = [...(video.textTracks || [])].filter(t => t.kind === 'subtitles' || t.kind === 'captions');
+  tt.forEach((t, i) => subs.push({ label: trkLabel(t.label, t.language, i), lang: langOf(t.language), sel: t.mode === 'showing',
+    set: () => tt.forEach(x => { x.mode = x === t ? 'showing' : 'disabled'; }) }));
+  return { audio, subs, off: () => tt.forEach(x => { x.mode = 'disabled'; }), offSel: !tt.some(t => t.mode === 'showing') };
+}
+/** Gemerkte Sprache automatisch wählen. */
+function applyTrackPref() {
+  const p = trkPref(), t = getTracks();
+  if (p.audio && t.audio.length > 1) { const a = t.audio.find(x => x.lang === p.audio); if (a && !a.sel) a.set(); }
+  if (p.sub && t.subs.length) {
+    if (p.sub === 'off') { if (!t.offSel) t.off(); }
+    else { const s = t.subs.find(x => x.lang === p.sub); if (s && !s.sel) s.set(); }
+  }
+}
+const canExternal = () => { try { return !!(bridge && typeof bridge.openExternal === 'function' && bridge.hasExternalPlayer()); } catch (e) { return false; } };
+let menuActs = [];
+function renderMenu(focusIdx) {
+  const t = getTracks(), rows = [];
+  menuActs = [];
+  const item = (label, sel, fn, cls = '') => { menuActs.push(fn); return `<button class="pm-item ${sel ? 'sel' : ''} ${cls}" data-pm="${menuActs.length - 1}"><span class="ck">${sel ? '✓' : ''}</span><span>${esc(label)}</span></button>`; };
+  if (t.audio.length > 1) {
+    rows.push('<div class="pm-h">Tonspur</div>');
+    t.audio.forEach(a => rows.push(item(a.label, a.sel, () => { a.set(); trkSave('audio', a.lang); toast('Tonspur: ' + a.label); })));
+  }
+  if (t.subs.length) {
+    rows.push('<div class="pm-h">Untertitel</div>');
+    rows.push(item('Aus', t.offSel, () => { t.off(); trkSave('sub', 'off'); toast('Untertitel aus'); }));
+    t.subs.forEach(s => rows.push(item(s.label, s.sel, () => { s.set(); trkSave('sub', s.lang); toast('Untertitel: ' + s.label); })));
+  }
+  if (!t.audio.length && !t.subs.length || (t.audio.length < 2 && !t.subs.length)) {
+    rows.push(`<p class="pm-note">${engine === 'native'
+      ? 'Ton- und Untertitelspuren in MKV/MP4-Dateien kann der eingebaute Player nicht umschalten.' + (canExternal() ? ' Dafür „In anderem Player öffnen“ wählen.' : '')
+      : 'Keine weiteren Ton- oder Untertitelspuren.'}</p>`);
+  }
+  rows.push('<div class="pm-h">Mehr</div>');
+  if (!vod && currentId) rows.push(item(isFav(currentId) ? '★ Aus Favoriten entfernen' : '☆ Zu Favoriten hinzufügen', false, () => toggleFav(currentId)));
+  if (vod && canExternal()) rows.push(item('In anderem Player öffnen (z. B. VLC)', false, () => openExternalPlayer()));
+  rows.push(item('Schließen', false, () => {}, 'muted'));
+  $('#pMenu').innerHTML = `<div class="pm-title">Optionen</div>${rows.join('')}`;
+  const btns = $$('#pMenu .pm-item');
+  const f = btns[Math.max(0, Math.min(btns.length - 1, focusIdx == null ? btns.findIndex(b => b.classList.contains('sel')) : focusIdx))] || btns[0];
+  if (f) { f.focus({ preventScroll: true }); f.scrollIntoView({ block: 'nearest' }); }
+}
+function openMenu() {
+  if (menuOpen) return;
+  menuOpen = true;
+  pushOverlay('pmenu');
+  $('#pMenu').classList.remove('hidden');
+  $('#osd').classList.add('hide');
+  renderMenu();
+}
+function closeMenu(fromPop) {
+  if (!menuOpen) return;
+  menuOpen = false;
+  $('#pMenu').classList.add('hidden');
+  if (document.activeElement) document.activeElement.blur();
+  if (!fromPop) popOverlay('pmenu');
+}
+function menuKey(e) {
+  const k = e.key, btns = $$('#pMenu .pm-item'), i = btns.indexOf(document.activeElement);
+  e.preventDefault();
+  if (['Escape', 'Backspace', 'GoBack', 'BrowserBack', 'ContextMenu', 'ArrowLeft', 'm', 'M'].includes(k)) return closeMenu();
+  if (k === 'ArrowDown' || k === 'ArrowUp') {
+    const n = btns[Math.max(0, Math.min(btns.length - 1, (i < 0 ? 0 : i + (k === 'ArrowDown' ? 1 : -1))))];
+    if (n) { n.focus({ preventScroll: true }); n.scrollIntoView({ block: 'nearest' }); }
+    return;
+  }
+  if (k === 'Enter' || k === ' ') {
+    const b = document.activeElement && document.activeElement.closest('[data-pm]');
+    if (!b) return;
+    const fn = menuActs[Number(b.dataset.pm)];
+    closeMenu();
+    if (fn) fn();
+  }
+}
+function openExternalPlayer() {
+  if (!vod) return;
+  const name = (vod.ctx && vod.ctx.name) || vod.show;
+  const url = vod.ep.url, title = vod.ep.movie ? name : `${name} – S${vod.ep.season} E${vod.ep.num}`;
+  const pos = isFinite(video.currentTime) ? video.currentTime * 1000 : 0;
+  saveVodPos();
+  if (!bridge.openExternal(url, title, pos)) toast('Kein anderer Player gefunden');
+}
+$('#pMenu').addEventListener('click', e => { const b = e.target.closest('[data-pm]'); if (!b) return; const fn = menuActs[Number(b.dataset.pm)]; closeMenu(); if (fn) fn(); });
 
 /* ================= Navigation per Fernbedienung ================= */
 function navigate(dir) {

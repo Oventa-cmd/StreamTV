@@ -6,6 +6,10 @@
 
     <queries>
         <package android:name="ch.protonvpn.android" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="video/*" />
+        </intent>
     </queries>
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
