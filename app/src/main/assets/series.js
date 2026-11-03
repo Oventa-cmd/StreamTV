@@ -175,7 +175,8 @@ const VP = {
     this.save();
   },
   save() { try { localStorage.setItem(this.STORE, JSON.stringify(this.all())); } catch (e) {} },
-  done(id) { const v = this.get(id); return !!(v && v.dur && v.pos >= v.dur - 90); },
+  /** Gesehen = im Abspann angekommen (mind. 90 s, bei langen Titeln bis 150 s = 4 % vor Schluss). */
+  done(id) { const v = this.get(id); return !!(v && v.dur && v.pos >= v.dur - Math.max(90, Math.min(150, v.dur * 0.04))); },
   /** Angefangene Folgen – pro Serie nur die zuletzt gesehene, neueste zuerst. */
   continueList(max = 15) {
     const s = this.all(), seen = new Set(), out = [];

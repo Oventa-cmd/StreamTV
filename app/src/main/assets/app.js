@@ -948,6 +948,7 @@ function enterPlayer() {
 }
 /* ---------- Serienfolgen (VOD) ---------- */
 function setVod(v) {
+  hideSkip();
   if (vod && vod !== v) saveVodPos();
   vod = v;
   $('#player').classList.toggle('vod', !!v);
@@ -969,19 +970,65 @@ function openVod(list, idx, show, ctx) {
   setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false, synced: false });
   currentId = null;
   $('#pTitle').textContent = ep.movie ? (ctx && ctx.name) || show : `${ep.num}. ${ep.title}`;
-  $('#pGroup').textContent = ep.movie ? 'Film' + (ctx && ctx.src ? ' · ' + ctx.src : '') : `${show} · Staffel ${ep.season}`;
+  $('#pGroup').textContent = ep.movie ? 'Film' + (ctx && ctx.src ? ' · ' + ctx.src : '') : `${(ctx && ctx.name) || show} · Staffel ${ep.season}`;
   $('#pLogo').textContent = ep.movie ? 'FILM' : `S${ep.season}`;
   updateProg();
   loadStream(ep.url);
   showOsd();
 }
-function saveVodPos() {
-  if (!vod || !video.duration || !isFinite(video.duration) || video.currentTime < 5) return;
+function saveVodPos(asDone) {
+  asDone = asDone || !!(vod && vod.doneMark);
+  if (!vod || !video.duration || !isFinite(video.duration) || (video.currentTime < 5 && !asDone)) return;
   const e = vod.ep, c = vod.ctx;
-  VP.set(e.id, video.currentTime, video.duration, c ? {
+  VP.set(e.id, asDone ? video.duration : video.currentTime, video.duration, c ? {
     show: (c && c.name) || vod.show, movie: !!e.movie, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || '', tmdb: c.tmdb || ''
   } : null);
 }
+/* ---------- Intro / Abspann überspringen ---------- */
+const INTRO_WINDOW = 300, INTRO_SKIP = 85, INTRO_SHOW = 10000;
+let skipKind = null, skipTimer = null;
+const outroLen = d => Math.max(60, Math.min(150, d * 0.04));
+function showSkip(kind) {
+  const b = $('#pSkip');
+  skipKind = kind;
+  const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length;
+  b.innerHTML = kind === 'intro' ? 'Intro überspringen <span>⏭</span>' : next ? 'Nächste Folge <span>▶</span>' : 'Abspann überspringen <span>⏭</span>';
+  b.classList.remove('hidden');
+  clearTimeout(skipTimer);
+  if (kind === 'intro') skipTimer = setTimeout(hideSkip, INTRO_SHOW);
+}
+function hideSkip() {
+  clearTimeout(skipTimer);
+  skipKind = null;
+  $('#pSkip').classList.add('hidden');
+}
+function checkSkip() {
+  if (!vod || menuOpen) return;
+  const t = video.currentTime || 0, d = isFinite(video.duration) ? video.duration : 0;
+  if (!vod.introSeen && !vod.ep.movie && t >= 1) {
+    vod.introSeen = true;
+    if (t < INTRO_WINDOW && (!d || d > 180)) showSkip('intro');
+  }
+  if (d > 120) {
+    const inOutro = d - t <= outroLen(d);
+    if (inOutro && skipKind !== 'outro' && !vod.outroDismissed) showSkip('outro');
+    else if (!inOutro && skipKind === 'outro') hideSkip();
+  }
+}
+function doSkip() {
+  const kind = skipKind;
+  hideSkip();
+  if (!vod) return;
+  if (kind === 'intro') { seek(INTRO_SKIP); showOsd(); return; }
+  // Abspann: als gesehen werten, dann weiter
+  vod.doneMark = true;
+  saveVodPos(true);
+  if (!vod.synced) syncWatched(vod);
+  if (!vod.ep.movie && vod.idx + 1 < vod.list.length) { const v = vod; v.outroDismissed = true; openVod(v.list, v.idx + 1, v.show, v.ctx); }
+  else { vod.outroDismissed = true; closePlayer(); }
+}
+$('#pSkip').addEventListener('click', e => { e.stopPropagation(); doSkip(); });
+
 /* ---------- Watchlist-Sync (ab 90 % gesehen) ---------- */
 async function syncWatched(v) {
   v.synced = true;
@@ -1056,6 +1103,7 @@ video.addEventListener('timeupdate', () => {
   if (!vod) return;
   updateProg();
   if (!vod.synced && isFinite(video.duration) && video.duration > 60 && video.currentTime / video.duration >= 0.9) syncWatched(vod);
+  checkSkip();
   if (Date.now() - vodSaveAt > 10000) { vodSaveAt = Date.now(); saveVodPos(); }
 });
 video.addEventListener('ended', () => {
@@ -1103,6 +1151,7 @@ function togglePlay() { video.paused ? safePlay(video) : video.pause(); }
 function playerKey(e) {
   const k = e.key;
   if (menuOpen) return menuKey(e);
+  if (skipKind && ['Enter', ' '].includes(k)) { e.preventDefault(); doSkip(); return; }
   if (k === 'ContextMenu' || k === 'm' || k === 'M') { e.preventDefault(); openMenu(); return; }
   if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k)) { e.preventDefault(); closePlayer(); return; }
   if (vod && ['ArrowLeft', 'MediaRewind'].includes(k)) seek(k === 'MediaRewind' ? -30 : -10);
