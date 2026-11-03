@@ -6,6 +6,7 @@ IPTV-Player für Fire TV / Android TV im Netflix-Stil (WebView-App, Player liegt
 - HLS-Player (hls.js gebündelt), Kanalwechsel per ▲▼
 - M3U-Import per URL oder Datei, Kanäle hinzufügen, bearbeiten, löschen
 - Kategorien, Suche, Favoriten (Taste „f“ / Menü-Taste oder Stern)
+- Serien-Empfehlungen (TMDB): in der Detailansicht „Beim Anbieter suchen“ findet die Serie im Xtream-Serienkatalog, zeigt Staffeln & Folgen und spielt sie direkt ab (Fortsetzen, ◀▶ spulen, ▲▼ Folge wechseln)
 - Komplett per Fernbedienung bedienbar
 
 Jeder Push auf `main` baut per GitHub Actions eine APK und veröffentlicht sie als Release.

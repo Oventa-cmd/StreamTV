@@ -241,3 +241,33 @@ button.pill:focus{background:#fff;color:#000}
 
 .form-err{color:#ff8a80;font-size:.85rem;font-weight:600;padding:0 1.1rem 1rem;line-height:1.45}
 .form-err:empty{display:none}
+
+/* ---------- Serie beim IPTV-Anbieter ---------- */
+.sheet.iptv .bd{filter:blur(6px) brightness(.45);transform:scale(1.05)}
+.sheet.iptv .inner{max-width:none;justify-content:flex-start;overflow-y:auto;scrollbar-width:none;padding:2.4rem var(--pad) 3rem}
+.sheet.iptv .inner::-webkit-scrollbar{display:none}
+.ip-head{max-width:900px;margin-bottom:1.2rem}
+.ip-head h1{font-size:clamp(1.8rem,3.4vw,2.6rem);margin:.35rem 0 .5rem}
+.ip-head .meta{margin-bottom:1rem}
+.ip-head .meta.err{color:#ff8a80}
+.ip-body{max-width:1000px}
+.ip-seasons{display:flex;gap:.55rem;flex-wrap:wrap;margin-bottom:1rem}
+.ip-list{background:rgba(28,28,30,.72);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px)}
+.ip-list .row-btn{gap:1rem;padding:.9rem 1.2rem;transition:background .2s,transform .25s var(--ease)}
+.ip-list .row-btn .lbl{flex:1;min-width:0}
+.ip-list .row-btn .lbl b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ip-list .row-btn .lbl small{display:block;color:var(--mut);font-size:.8rem;font-weight:500;margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ip-list .row-btn:focus{background:#fff;color:#000}
+.ip-list .row-btn:focus small,.ip-list .row-btn:focus .chev{color:rgba(0,0,0,.6)}
+.ip-resume{flex:0 0 auto;font-size:.8rem;font-weight:700;color:var(--accent)}
+.ip-done{flex:0 0 auto;font-size:.8rem;font-weight:700;color:var(--green)}
+.row-btn:focus .ip-resume{color:#0060df}.row-btn:focus .ip-done{color:#1a8f3c}
+.ip-pbar{display:block;height:.22rem;border-radius:1rem;background:rgba(255,255,255,.15);margin-top:.45rem;max-width:18rem;overflow:hidden}
+.ip-pbar i{display:block;height:100%;background:var(--red)}
+.ip-skel{min-height:3.6rem;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.05) 50%,transparent 70%);background-size:300% 100%;animation:shimmer 1.4s infinite}
+
+/* Player: Fortschritt bei Serienfolgen */
+.osd-prog{display:flex;align-items:center;gap:.8rem;margin-top:.45rem}
+.osd-prog .bar{flex:1;height:.3rem;border-radius:1rem;background:rgba(255,255,255,.2);overflow:hidden}
+.osd-prog .bar i{display:block;height:100%;width:0;background:#fff;transition:width .3s linear}
+.osd-prog span{font-size:.8rem;font-weight:600;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
