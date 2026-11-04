@@ -266,7 +266,7 @@ function resumeTileHTML(v) {
 }
 function continueRail() {
   const list = VP.continueList();
-  return list.length ? railHTML('Weiterschauen', list.map(resumeTileHTML).join('')) : '';
+  return list.length ? railHTML('Weiterschauen', list.map(resumeTileHTML).join(''), 'OK gedrückt halten zum Entfernen') : '';
 }
 const skeletons = n => Array.from({ length: n }, () => `<div class="tile show skeleton"><div class="art"></div><div class="caption">&nbsp;</div></div>`).join('');
 function railHTML(title, inner, count) {
@@ -1843,6 +1843,38 @@ async function playResume(id) {
   if (playerOpen) return;
   openVod(list, idx, m.show, { acc: m.acc, sid: m.sid, img: m.img, src: m.src, name: m.show, tmdb: m.tmdb });
 }
+/** Weiterschauen-Kachel: Folgenauswahl der Serie öffnen (Hauptknopf „Weiterschauen“). */
+function openResumeSheet(id) {
+  const v = VP.get(id);
+  if (!v || !v.m || sheetOpen) return;
+  const m = v.m, acc = XS.accounts().find(a => a.key === m.acc);
+  if (!acc) return playResume(id);   // Quelle nicht mehr vorhanden → direkt abspielen
+  const movie = !!m.movie, kind = movie ? 'vod' : 'series', sid = String(m.sid || '').replace(/^m/, '');
+  const hit = CAT[kind].items && CAT[kind].items.find(x => x.acc.key === acc.key && String(x.it.sid) === sid);
+  const it = hit ? hit.it : { sid, name: m.show, n: XS.norm(m.show), t: [], year: '', tmdb: 0, cover: m.img || '', cat: '',
+    ext: (String(m.url || '').match(/\.(\w+)$/) || [])[1] || 'mp4' };
+  const tid = Number(String(m.tmdb || '').split(':')[1]) || it.tmdb || 0;
+  lastFocus = document.activeElement; sheetOpen = true;
+  pushOverlay('sheet');
+  $('#sheet').classList.add('open');
+  sheetAnim();
+  const bg = m.img || it.cover;
+  $('#sheetBd').style.backgroundImage = bg ? `url("${bg.replace(/"/g, '%22')}")` : 'none';
+  const p = { type: movie ? 'movie' : 'tv', id: tid, title: m.show, backdrop: null, poster: null };
+  ip = { p, d: null, status: 'loadingShow', msg: '', hits: [{ acc, it, s: 100 }], sel: null, info: null, season: null, token: Date.now(), cat: true };
+  pushOverlay('iptv');
+  $('#sheet').classList.add('iptv');
+  selectHit(0);
+}
+/* OK gedrückt halten auf einer Weiterschauen-Kachel = entfernen, kurz = Folgenauswahl */
+const HOLD = { id: null, timer: null, done: false };
+document.addEventListener('keyup', e => {
+  if (e.key !== 'Enter' || !HOLD.id) return;
+  clearTimeout(HOLD.timer);
+  const id = HOLD.id, done = HOLD.done;
+  HOLD.id = null;
+  if (!done) openResumeSheet(id);
+});
 function hideResume(id) {
   VP.hide(id);
   const tiles = $$('[data-resume]'), i = tiles.findIndex(t => t.dataset.resume === id);
@@ -2367,6 +2399,13 @@ document.addEventListener('keydown', e => {
     if (nx) { e.preventDefault(); show(nx.dataset.view); return; }
   }
   if (NAV_KEYS.includes(e.key)) { e.preventDefault(); navigate(e.key); return; }
+  if (e.key === 'Enter' && a && a.dataset && a.dataset.resume) {
+    e.preventDefault();
+    if (e.repeat || HOLD.id) return;
+    HOLD.id = a.dataset.resume; HOLD.done = false;
+    HOLD.timer = setTimeout(() => { if (HOLD.id) { HOLD.done = true; hideResume(HOLD.id); } }, 650);
+    return;
+  }
   if (e.key === 'Enter' && a && a.classList.contains('tile')) { e.preventDefault(); a.click(); return; }
   if ((e.key === 'f' || e.key === 'ContextMenu') && a && a.dataset.card) { e.preventDefault(); toggleFav(a.dataset.card); }
   if (e.key === 'ContextMenu' && a && a.dataset.resume) { e.preventDefault(); hideResume(a.dataset.resume); }
@@ -2418,7 +2457,7 @@ document.addEventListener('click', e => {
   if (t.closest('#spClose')) { closeSheet(); return; }
   if (t.closest('#spRetry')) { SP.refresh(true); return; }
   const rs = t.closest('[data-resume]');
-  if (rs) { playResume(rs.dataset.resume); return; }
+  if (rs) { openResumeSheet(rs.dataset.resume); return; }
   const sc = t.closest('[data-scat]');
   if (sc) {
     const k = sc.dataset.kind, S = CAT[k];
