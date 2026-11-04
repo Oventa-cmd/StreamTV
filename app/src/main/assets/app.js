@@ -520,7 +520,11 @@ function toast(msg) {
 /* ================= Hero (Top-Serien, sonst Live-Sender) ================= */
 let heroItems = [], heroIdx = 0, heroTimer = null;
 function setupHero() {
-  heroItems = (availList('top', 'tv') || []).filter(p => p.backdrop).slice(0, 5);
+  // Billboard: abwechselnd Top-Serien und Top-Filme der Woche (nur, was der Anbieter hat)
+  const tv = (availList('top', 'tv') || []).filter(p => p.backdrop).slice(0, 4);
+  const mv = (availList('mTop', 'movie') || []).filter(p => p.backdrop).slice(0, 3);
+  heroItems = [];
+  for (let i = 0; i < Math.max(tv.length, mv.length); i++) { if (tv[i]) heroItems.push(tv[i]); if (mv[i]) heroItems.push(mv[i]); }
   heroIdx = 0;
   renderHero();
   clearInterval(heroTimer);
@@ -561,7 +565,8 @@ function renderHero() {
     heroBackdrop(`${TM.IMG}w1280${p.backdrop}`);
     const d = TM.details_[p.type + ':' + p.id];
     const logo = d && TM.pickLogo(d);
-    box.innerHTML = `<div class="eyebrow"><span class="t10">TOP<b>10</b></span>Platz ${TM.list('top').indexOf(p) + 1} der Serien diese Woche</div>
+    const film = p.type === 'movie';
+    box.innerHTML = `<div class="eyebrow"><span class="t10">TOP<b>10</b></span>Platz ${TM.list(film ? 'mTop' : 'top').indexOf(p) + 1} der ${film ? 'Filme' : 'Serien'} diese Woche</div>
       ${logo ? `<img class="hero-logo" src="${TM.IMG}w500${logo}" alt="">` : `<h1>${esc(p.title)}</h1>`}
       <div class="meta">${esc(TM.info(p))}</div>
       <p class="ov">${esc(p.overview)}</p>
@@ -574,14 +579,13 @@ function renderHero() {
   }
   heroBackdrop('');
   $('#heroDots').innerHTML = '';
-  const feat = favList()[0] || recentList()[0] || state.channels[0];
-  box.innerHTML = feat
-    ? `<div class="eyebrow">Live · ${esc(feat.group)}</div><h1>${esc(feat.name)}</h1>
-       <div class="meta">${isFav(feat.id) ? 'Dein Favorit' : 'Jetzt im Programm'}</div>
-       <div class="btn-row"><button class="btn primary focusable" data-card="${esc(feat.id)}">▶ Abspielen</button></div>`
-    : `<div class="eyebrow">Willkommen</div><h1>StreamTV</h1><p class="ov">Füge unter „Einstellungen“ eine M3U-Playlist oder einen Xtream-Zugang hinzu.</p>
+  // Kein Sender als Billboard: solange die Top-Titel laden, ein ruhiger Platzhalter
+  const ready = TM.key() && (state.sources.length || !XS.accounts().length);
+  box.innerHTML = ready
+    ? `<div class="eyebrow"><span class="t10">TOP<b>10</b></span>Serien &amp; Filme diese Woche</div><h1 class="hero-wait">Lade Top-Titel …</h1>`
+    : `<div class="eyebrow">Willkommen</div><h1>StreamTV</h1><p class="ov">${TM.key() ? 'Füge unter „Einstellungen“ eine M3U-Playlist oder einen Xtream-Zugang hinzu.' : 'Melde dich unter „Einstellungen“ mit deinem Watchlist-Konto an oder hinterlege einen TMDB-Schlüssel, um die Top-Serien und -Filme zu sehen.'}</p>
        <div class="btn-row"><button class="btn primary focusable" data-view="settings">Einrichten</button></div>`;
-  heroEnter('live:' + (feat ? feat.id : 'none'));
+  heroEnter(ready ? 'wait' : 'setup');
 }
 
 /* ================= Entdecken laden ================= */
@@ -597,7 +601,7 @@ async function loadDiscover(force) {
   renderRecs();
   await Promise.all(TM.tabs().map(t => TM.ensure(t, force).catch(() => {}).then(() => {
     renderRecs();
-    if (t.id === 'top') setupHero();
+    if (t.id === 'top' || t.id === 'mTop') setupHero();
   })));
 }
 
@@ -913,7 +917,7 @@ function afterCatalog(kind) {
   if (state.view === S.view) renderCatalog(kind, true);
   if (state.view === 'search') renderSearch();
   renderRecs();
-  if (kind === 'series') setupHero();
+  setupHero();
 }
 function serTileHTML(kind, x, i) {
   const it = x.it;

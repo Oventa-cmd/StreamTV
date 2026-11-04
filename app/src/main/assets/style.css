@@ -691,3 +691,6 @@ html.nv #video{visibility:hidden}
 .ep.seen .ep-thumb{opacity:.6}
 .ep.skel .ep-thumb{animation:shimmer 1.4s infinite;background:linear-gradient(100deg,#1c1c1f 30%,#2a2a2e 50%,#1c1c1f 70%);background-size:300% 100%}
 .ep.skel .ep-txt{height:2.6rem;border-radius:.4rem;background:rgba(255,255,255,.04)}
+
+.hero-wait{opacity:.35;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.6}}
