@@ -229,18 +229,43 @@ const VP = {
   save() { try { localStorage.setItem(this.STORE, JSON.stringify(this.all())); } catch (e) {} },
   /** Gesehen = im Abspann angekommen (mind. 90 s, bei langen Titeln bis 150 s = 4 % vor Schluss). */
   done(id) { const v = this.get(id); return !!(v && v.dur && v.pos >= v.dur - Math.max(90, Math.min(150, v.dur * 0.04))); },
-  /** Angefangene Folgen – pro Serie nur die zuletzt gesehene, neueste zuerst. */
+  virt: {},   // „nächste Folge“-Einträge (noch nicht angefangen), id -> Eintrag
+  /** Eintrag für Weiterschauen – angefangene Folge oder nächste Folge der Serie. */
+  entry(id) { return this.get(id) || this.virt[id] || null; },
+  /** Pro Serie ein Eintrag, neueste zuerst: angefangene Folge – oder, wenn die letzte fertig ist, die nächste Folge. */
   continueList(max = 15) {
+    const s = this.all(), seen = new Set(), out = [];
+    this.virt = {};
+    Object.keys(s).filter(id => s[id].m).sort((a, b) => s[b].at - s[a].at).forEach(id => {
+      const v = s[id], k = v.m.acc + '|' + v.m.sid;
+      if (seen.has(k)) return;
+      seen.add(k);
+      if (v.m.hidden) return;
+      if (!this.done(id)) { if (v.pos > 30) out.push(Object.assign({ id }, v)); return; }
+      const n = v.m.next;
+      if (v.m.movie || !n || !n.id || this.done(n.id)) return;
+      const e = { id: n.id, pos: 0, dur: n.dur || 0, at: v.at, next: true, src: id,
+        m: Object.assign({}, v.m, { season: n.season, num: n.num, title: n.title, url: n.url, next: undefined }) };
+      this.virt[n.id] = e;
+      out.push(e);
+    });
+    return out.slice(0, max);
+  },
+  /** Serien, deren letzte Folge fertig ist, aber deren nächste Folge noch unbekannt ist. */
+  needNext() {
     const s = this.all(), seen = new Set(), out = [];
     Object.keys(s).filter(id => s[id].m).sort((a, b) => s[b].at - s[a].at).forEach(id => {
       const v = s[id], k = v.m.acc + '|' + v.m.sid;
       if (seen.has(k)) return;
       seen.add(k);
-      if (!v.m.hidden && v.pos > 30 && !this.done(id)) out.push(Object.assign({ id }, v));
+      if (!v.m.hidden && !v.m.movie && this.done(id) && v.m.next === undefined) out.push(id);
     });
-    return out.slice(0, max);
+    return out;
   },
-  hide(id) { const v = this.get(id); if (v && v.m) { v.m.hidden = true; this.save(); this.share(); } }
+  hide(id) {
+    const v = this.get(id) && this.get(id).m ? this.get(id) : this.virt[id] ? this.get(this.virt[id].src) : null;
+    if (v && v.m) { v.m.hidden = true; this.save(); this.share(); }
+  }
 };
 const fmtTime = s => {
   s = Math.max(0, Math.floor(s || 0));

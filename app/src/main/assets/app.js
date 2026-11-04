@@ -255,13 +255,13 @@ function showTileHTML(p, rank) {
   </div>`;
 }
 function resumeTileHTML(v) {
-  const m = v.m, pct = v.dur ? Math.min(100, v.pos / v.dur * 100) : 0;
+  const m = v.m, pct = v.dur && !v.next ? Math.min(100, v.pos / v.dur * 100) : 0;
   const left = v.dur ? Math.max(1, Math.round((v.dur - v.pos) / 60)) : 0;
   return `<div class="tile show cont focusable" tabindex="0" data-resume="${esc(v.id)}">
     <div class="art">${m.img ? `<img class="bd" src="${esc(m.img)}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="ini">${esc(initials(m.show))}</span>`}
       <div class="shade"></div><span class="ep-badge">${m.movie ? 'Film' : `S${esc(m.season)} E${esc(m.num)}`}</span>
       <div class="t">${esc(m.show)}</div><span class="pbar"><i style="width:${pct.toFixed(1)}%"></i></span></div>
-    <div class="caption">${esc([m.movie ? '' : m.title, left ? `noch ${left} Min.` : ''].filter(Boolean).join(' · ')) || '&nbsp;'}</div>
+    <div class="caption">${esc([v.next ? 'Als Nächstes' : '', m.movie ? '' : m.title, left && !v.next ? `noch ${left} Min.` : ''].filter(Boolean).join(' · ')) || '&nbsp;'}</div>
   </div>`;
 }
 function continueRail() {
@@ -283,7 +283,8 @@ function channelRail(title, list, catKey) {
 const FAV_CAT = 'Favoriten';
 /** Start: nur Ausschnitte – Weiterschauen, Lieblingssender, Zuletzt gesehen, ein paar Empfehlungen. */
 function renderHome() {
-  $('#homeTop').innerHTML = continueRail() + channelRail('Lieblingssender', favList(), FAV_CAT) + channelRail('Zuletzt gesehen', recentList());
+  $('#homeTop').innerHTML = continueRail() + channelRail('Lieblingssender', favList(), FAV_CAT);
+  if (VP.needNext().length && !nextBusy) setTimeout(fillNext, 300);
   EPG.scan();
   if (!heroItems.length) renderHero();
 }
@@ -338,10 +339,14 @@ function recRowHTML(t, moreView) {
 function wlPicks(type) {
   if (!WL.connected) return [];
   const rank = { watching: 0, planned: 1 };
-  return (WL.s.items || []).filter(o => o.status in rank && (o.media_type === 'tv' || o.media_type === 'movie') && (!type || o.media_type === type))
+  const own = state.settings.wlOrder || [], pos = new Map(own.map((k, i) => [k, i]));
+  const list = (WL.s.items || []).filter(o => o.status in rank && (o.media_type === 'tv' || o.media_type === 'movie') && (!type || o.media_type === type))
     .sort((a, b) => rank[a.status] - rank[b.status]
-      || (a.status === 'watching' ? String(b.updated_at || '').localeCompare(String(a.updated_at || '')) : (Number(a.position) || 0) - (Number(b.position) || 0)))
-    .map(o => ({
+      || (a.status === 'watching' ? String(b.updated_at || '').localeCompare(String(a.updated_at || '')) : (Number(a.position) || 0) - (Number(b.position) || 0)));
+  // eigene Reihenfolge (verschoben mit OK gedrückt halten); neue Titel hinten
+  const ix = o => { const k = o.media_type + ':' + o.tmdb_id; return pos.has(k) ? pos.get(k) : own.length + list.indexOf(o); };
+  if (own.length) list.sort((a, b) => ix(a) - ix(b));
+  return list.map(o => ({
       type: o.media_type, id: o.tmdb_id, title: o.title || '', orig: '', backdrop: o.backdrop_path || null, poster: o.poster_path || null,
       overview: '', year: String((o.meta && o.meta.year) || ''), vote: 0, reason: o.status === 'watching' ? 'Am Schauen' : 'Auf der Watchlist'
     }));
@@ -351,7 +356,39 @@ function wlRowHTML(type) {
   if (!all.length) return '';
   const list = all.filter(p => { const m = availMode(p.type); return m === 'all' || (m === 'filter' && XS.has(p)); });
   if (!list.length) return all.some(p => availMode(p.type) === 'wait') ? railHTML('Meine Watchlist', skeletons(4)) : '';
-  return railHTML('Meine Watchlist', list.map(p => showTileHTML(p)).join(''), list.length);
+  return railHTML('Meine Watchlist', list.map(p => showTileHTML(p)).join(''), 'OK gedrückt halten zum Verschieben').replace('<section>', `<section class="wl-row" data-wltype="${type || ''}">`);
+}
+/* ---------- Watchlist sortieren: OK halten → ◀▶ verschieben → OK speichern ---------- */
+const WLM = { on: false, el: null };
+function startMove(el) {
+  WLM.on = true; WLM.el = el;
+  el.classList.add('moving');
+  el.closest('.wl-row').classList.add('sorting');
+  toast('◀ ▶ verschieben · OK speichern');
+}
+function moveStep(dir) {
+  const el = WLM.el, sib = dir < 0 ? el.previousElementSibling : el.nextElementSibling;
+  if (!sib || !sib.dataset.show) return;
+  if (dir < 0) sib.before(el); else sib.after(el);
+  el.focus({ preventScroll: true });
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+}
+function endMove() {
+  if (!WLM.on) return;
+  const el = WLM.el, row = el.closest('.wl-row'), key = el.dataset.show;
+  WLM.on = false; WLM.el = null;
+  const sub = [...row.querySelectorAll('[data-show]')].map(t => t.dataset.show), set = new Set(sub);
+  let j = 0;
+  const merged = wlPicks().map(p => p.type + ':' + p.id).map(k => set.has(k) ? sub[j++] : k);
+  state.settings.wlOrder = merged; persist();
+  renderRecs();
+  const t = visibleOf(`.wl-row [data-show="${CSS.escape(key)}"]`);
+  if (t) t.focus({ preventScroll: true });
+  toast('Reihenfolge gespeichert');
+  // geplante Titel auch im Watchlist-Konto umsortieren (wie in der Watchlist-App)
+  const planned = merged.map(k => (WL.s.items || []).find(o => o.media_type + ':' + o.tmdb_id === k)).filter(o => o && o.status === 'planned');
+  const changes = planned.map((o, i) => ({ type: o.media_type, id: o.tmdb_id, position: i + 1 })).filter((x, i) => Number(planned[i].position) !== x.position);
+  WL.setPositions(changes).catch(e => toast(e.message));
 }
 function renderRecs() {
   keepFocus(() => {
@@ -1344,7 +1381,7 @@ async function openDeep(uri) {
   const route = parts[0] || 'home';
   if (route === 'resume' && parts[1]) {
     show('home');
-    if (VP.get(parts[1])) return playResume(parts[1]);
+    if (VP.entry(parts[1])) return playResume(parts[1]);
     toast('Folge nicht mehr in „Weiterschauen“');
     return;
   }
@@ -1391,6 +1428,7 @@ window.addEventListener('popstate', () => {
 });
 // Wird von der App aufgerufen, wenn kein Overlay offen ist: erst zur Startseite, dann beenden
 function handleBack() {
+  if (WLM.on) { endMove(); return true; }
   if (state.view === 'cats') { closeCats(); return true; }
   if (state.view === 'manage') { closeManage(); return true; }
   if (state.view !== 'home') { show('home'); return true; }
@@ -1692,8 +1730,30 @@ function saveVodPos(asDone) {
   if (!vod || !video.duration || !isFinite(video.duration) || (video.currentTime < 5 && !asDone)) return;
   const e = vod.ep, c = vod.ctx;
   VP.set(e.id, asDone ? video.duration : video.currentTime, video.duration, c ? {
-    show: (c && c.name) || vod.show, movie: !!e.movie, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || '', tmdb: c.tmdb || ''
+    show: (c && c.name) || vod.show, movie: !!e.movie, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || '', tmdb: c.tmdb || '',
+    next: e.movie ? null : nextOf(vod.list[vod.idx + 1])
   } : null);
+}
+const nextOf = n => n ? { id: n.id, season: n.season, num: n.num, title: n.title, url: n.url, dur: n.dur || 0 } : null;
+/** Ältere Einträge: nächste Folge beim Anbieter nachschlagen (im Hintergrund). */
+let nextBusy = false;
+async function fillNext() {
+  if (nextBusy) return;
+  const ids = VP.needNext().slice(0, 6);
+  if (!ids.length) return;
+  nextBusy = true;
+  let changed = false;
+  for (const id of ids) {
+    const v = VP.get(id), acc = XS.accounts().find(a => a.key === v.m.acc);
+    if (!acc) { v.m.next = null; changed = true; continue; }
+    try {
+      const all = (await XS.info(acc, v.m.sid)).seasons.flatMap(s => s.eps), i = all.findIndex(e => e.id === id);
+      v.m.next = i >= 0 ? nextOf(all[i + 1]) : null;
+      changed = true;
+    } catch (e) {}
+  }
+  nextBusy = false;
+  if (changed) { VP.save(); VP.share(); if (!playerOpen) keepFocus(renderHome); }
 }
 /* ---------- Intro, Rückblick, Abspann überspringen ---------- */
 // Quellen: TheIntroDB → selbst gelernt pro Serie → Faustregel (siehe skip.js)
@@ -1824,7 +1884,7 @@ async function syncWatched(v) {
 /* ---------- Weiterschauen ---------- */
 let resumeBusy = false;
 async function playResume(id) {
-  const v = VP.get(id);
+  const v = VP.entry(id);
   if (!v || !v.m || resumeBusy) return;
   const m = v.m;
   let list = [{ id, num: m.num, season: m.season, title: m.title, url: m.url, dur: v.dur, plot: '' }], idx = 0;
@@ -1845,7 +1905,7 @@ async function playResume(id) {
 }
 /** Weiterschauen-Kachel: Folgenauswahl der Serie öffnen (Hauptknopf „Weiterschauen“). */
 function openResumeSheet(id) {
-  const v = VP.get(id);
+  const v = VP.entry(id);
   if (!v || !v.m || sheetOpen) return;
   const m = v.m, acc = XS.accounts().find(a => a.key === m.acc);
   if (!acc) return playResume(id);   // Quelle nicht mehr vorhanden → direkt abspielen
@@ -1867,14 +1927,23 @@ function openResumeSheet(id) {
   selectHit(0);
 }
 /* OK gedrückt halten auf einer Weiterschauen-Kachel = entfernen, kurz = Folgenauswahl */
-const HOLD = { id: null, timer: null, done: false };
+const HOLD = { id: null, kind: '', el: null, timer: null, done: false };
 document.addEventListener('keyup', e => {
   if (e.key !== 'Enter' || !HOLD.id) return;
   clearTimeout(HOLD.timer);
   const id = HOLD.id, done = HOLD.done;
   HOLD.id = null;
-  if (!done) openResumeSheet(id);
+  if (done) return;
+  if (HOLD.kind === 'resume') openResumeSheet(id); else openSheet(id);
 });
+function holdStart(a, kind, id) {
+  HOLD.id = id; HOLD.kind = kind; HOLD.el = a; HOLD.done = false;
+  HOLD.timer = setTimeout(() => {
+    if (!HOLD.id) return;
+    HOLD.done = true;
+    if (kind === 'resume') hideResume(HOLD.id); else startMove(HOLD.el);
+  }, 650);
+}
 function hideResume(id) {
   VP.hide(id);
   const tiles = $$('[data-resume]'), i = tiles.findIndex(t => t.dataset.resume === id);
@@ -2398,12 +2467,18 @@ document.addEventListener('keydown', e => {
     const tabs = $$('.tabbar [data-view]'), nx = tabs[tabs.indexOf(a) + (e.key === 'ArrowRight' ? 1 : -1)];
     if (nx) { e.preventDefault(); show(nx.dataset.view); return; }
   }
+  if (WLM.on) {
+    e.preventDefault();
+    if (e.repeat && e.key === 'Enter') return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') moveStep(e.key === 'ArrowLeft' ? -1 : 1);
+    else if (['Enter', ' ', 'Escape', 'Backspace', 'ArrowUp', 'ArrowDown'].includes(e.key)) endMove();
+    return;
+  }
   if (NAV_KEYS.includes(e.key)) { e.preventDefault(); navigate(e.key); return; }
-  if (e.key === 'Enter' && a && a.dataset && a.dataset.resume) {
+  if (e.key === 'Enter' && a && a.dataset && (a.dataset.resume || (a.dataset.show && a.closest('.wl-row')))) {
     e.preventDefault();
     if (e.repeat || HOLD.id) return;
-    HOLD.id = a.dataset.resume; HOLD.done = false;
-    HOLD.timer = setTimeout(() => { if (HOLD.id) { HOLD.done = true; hideResume(HOLD.id); } }, 650);
+    holdStart(a, a.dataset.resume ? 'resume' : 'wl', a.dataset.resume || a.dataset.show);
     return;
   }
   if (e.key === 'Enter' && a && a.classList.contains('tile')) { e.preventDefault(); a.click(); return; }

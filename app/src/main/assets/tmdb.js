@@ -110,6 +110,18 @@ const WL = {
     await this.refreshItems(true);
   },
 
+  /** Reihenfolge der geplanten Titel speichern (gleiches Feld wie in der Watchlist-App). list: [{ type, id, position }] */
+  async setPositions(list) {
+    if (!list.length || !this.connected || !await this.ensureToken()) return;
+    for (const x of list) {
+      const r = await this.http('PATCH', `/rest/v1/items?media_type=eq.${encodeURIComponent(x.type)}&tmdb_id=eq.${Number(x.id)}`, { position: x.position });
+      if (r.status < 200 || r.status > 299) throw new Error('Reihenfolge nicht gespeichert (' + r.status + ')');
+      const o = (this.s.items || []).find(i => i.media_type === x.type && Number(i.tmdb_id) === Number(x.id));
+      if (o) o.position = x.position;
+    }
+    this.save();
+  },
+
   /* ---------- Gesehen-Status aus dem Player übernehmen ---------- */
   /** Ist (Staffel, Folge) die letzte bekannte Folge laut meta (aired bzw. seasons)? */
   isLast(meta, season, num) {

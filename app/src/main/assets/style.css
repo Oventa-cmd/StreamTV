@@ -721,3 +721,10 @@ header.scrolled{background:rgba(var(--bgr),.72)}
 #searchGrid{display:block;padding:0}
 #searchGrid section+section{margin-top:.4rem}
 #searchGrid .section-label{margin-top:.6rem}
+
+/* Watchlist sortieren */
+.wl-row .section-label small{font-size:.78rem}
+.tile.moving .art{transform:scale(1.12) translateY(-.5rem)!important;box-shadow:0 0 0 3px var(--red),0 26px 50px rgba(0,0,0,.75)!important}
+.tile.moving .caption{color:var(--txt)}
+.wl-row.sorting .tile:not(.moving){opacity:.55;transition:opacity .2s}
+.wl-row.sorting .tile:not(.moving) .art{transition:transform .35s var(--spring)}
