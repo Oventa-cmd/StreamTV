@@ -17,6 +17,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.util.Base64
+import android.util.Log
+import android.webkit.ConsoleMessage
 import org.json.JSONObject
 
 class MainActivity : Activity() {
@@ -66,6 +68,11 @@ class MainActivity : Activity() {
         takeConfig(intent)
         takeDeep(intent)
         web.webChromeClient = object : WebChromeClient() {
+            // JS-Meldungen und -Fehler im Logcat (Tag StreamTV-JS) – für Fehlersuche per adb logcat
+            override fun onConsoleMessage(m: ConsoleMessage): Boolean {
+                Log.i("StreamTV-JS", "${m.messageLevel()} ${m.message()} (${m.sourceId()?.substringAfterLast('/')}:${m.lineNumber()})")
+                return true
+            }
             override fun onShowFileChooser(
                 view: WebView,
                 callback: ValueCallback<Array<Uri>>,

@@ -1448,6 +1448,7 @@ const nvOk = () => { try { return !!(bridge && typeof bridge.nvPlay === 'functio
 })();
 NV.ev = (type, pos, dur, paused, msg) => {
   if (!NV.on) return;
+  if (type !== 'timeupdate') dbg('nv', type, Math.round(pos / 1000), paused ? 'paused' : '', msg || '');
   NV.t = pos / 1000; NV.d = dur > 0 ? dur / 1000 : NaN; NV.paused = !!paused;
   if (NV.seeking && (type === 'playing' || (type === 'pause' && paused) || Date.now() - NV.seekAt > 30000)) { NV.seeking = false; video.dispatchEvent(new Event('seeked')); }
   if (type === 'error') { console.warn('Nativer Player:', msg); if (failCb) failCb(); return; }
@@ -1567,6 +1568,7 @@ function streamFailed(url) {
 }
 function reconnect(reason) {
   if (!playerOpen || !RC.url || RC.waiting) return;
+  dbg('reconnect', reason, 't', Math.round(video.currentTime || 0));
   const n = ++RC.tries;
   if (vod && video.currentTime > 1) RC.resumeAt = video.currentTime;
   playToken++;   // laufende Versuche abbrechen
@@ -1746,6 +1748,7 @@ function checkSkip() {
   else if (!cur && skipSeg) hideSkip();
 }
 function seekTo(abs) {
+  dbg('seekTo', Math.round(abs), 'dur', video.duration, 'seeking', video.seeking);
   if (!vod || !isFinite(video.duration)) return;
   video.currentTime = Math.max(0, Math.min(video.duration - 2, abs));
   updateProg();
@@ -1775,8 +1778,10 @@ function noteOutro(v) {
   if ((v.segs || []).some(s => s.kind === 'outro' && s.src === 'db')) return;
   if (P / d >= 0.85 && off >= 15 && off <= 600) SK.learnOutro(serKey(v), off);
 }
+const dbg = (...a) => { try { console.log('[player]', ...a); } catch (e) {} };
 function doSkip() {
   const seg = skipSeg;
+  dbg('skip', seg && seg.kind, seg && seg.src, 'at', Math.round(video.currentTime || 0), 'nv', NV.on);
   hideSkip();
   if (!vod || !seg) return;
   vod.used[seg.kind] = true;
@@ -1903,6 +1908,7 @@ function scrubKey(dir, e) {
 function scrubCommit() {
   clearTimeout(SC.t);
   if (!SC.on) return;
+  dbg('scrub', Math.round(SC.from), '->', Math.round(SC.pos));
   SC.on = false;
   if (vod && isFinite(video.duration) && Math.abs(SC.pos - (video.currentTime || 0)) > 0.5) {
     const from = SC.from;
@@ -2052,6 +2058,7 @@ function zap(step) {
 function togglePlay() { video.paused ? safePlay(video) : video.pause(); }
 function playerKey(e) {
   const k = e.key;
+  dbg('key', k, e.repeat ? 'rep' : '', 'zone', typeof VC !== 'undefined' ? VC.zone : '', 'skip', skipKind || '-', 'osd', osdShown());
   if (menuOpen) return menuKey(e);
   if (clistOpen) return clistKey(e);
   if (!vod && currentId && k === 'ArrowLeft') { e.preventDefault(); openClist(); return; }
