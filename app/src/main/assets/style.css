@@ -694,3 +694,26 @@ html.nv #video{visibility:hidden}
 
 .hero-wait{opacity:.35;animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.6}}
+
+/* ---------- Designs (Einstellungen → Allgemein → Design) ---------- */
+:root{--bg:#1a1a1e;--bgr:26,26,30;--glow1:rgba(94,92,230,.16);--glow2:rgba(229,9,20,.10)}
+html[data-theme=slate]{--bg:#23262d;--bgr:35,38,45;--glow1:rgba(120,140,200,.16);--glow2:rgba(229,9,20,.08)}
+html[data-theme=navy]{--bg:#0f1830;--bgr:15,24,48;--glow1:rgba(10,132,255,.26);--glow2:rgba(94,92,230,.18)}
+html[data-theme=wine]{--bg:#221216;--bgr:34,18,22;--glow1:rgba(229,9,20,.20);--glow2:rgba(255,120,80,.10)}
+html[data-theme=forest]{--bg:#111c18;--bgr:17,28,24;--glow1:rgba(48,209,88,.14);--glow2:rgba(10,132,255,.10)}
+html[data-theme=black]{--bg:#000;--bgr:0,0,0;--glow1:rgba(94,92,230,.14);--glow2:rgba(229,9,20,.13)}
+body{background:radial-gradient(900px 480px at 85% -10%,var(--glow2),transparent 70%),
+  radial-gradient(1000px 520px at -10% 0%,var(--glow1),transparent 70%),var(--bg);background-attachment:fixed}
+.hero{background:var(--bg)}
+.hero::after{background:linear-gradient(to top,var(--bg) 0%,rgba(var(--bgr),.6) 28%,transparent 60%),
+  linear-gradient(to right,rgba(var(--bgr),.82),rgba(var(--bgr),.25) 55%,transparent 80%),linear-gradient(rgba(var(--bgr),.45),transparent 22%)}
+header{background:linear-gradient(rgba(var(--bgr),.72),rgba(var(--bgr),0)) border-box}
+header.scrolled{background:rgba(var(--bgr),.72)}
+.sheet{background:var(--bg)}
+.sheet .bd::after{background:linear-gradient(to right,var(--bg) 6%,rgba(var(--bgr),.72) 40%,rgba(var(--bgr),.1) 75%),linear-gradient(to top,var(--bg),transparent 50%)}
+.sheet.iptv .bd::after{background:linear-gradient(to right,var(--bg) 0%,rgba(var(--bgr),.85) 45%,rgba(var(--bgr),.45) 100%),linear-gradient(to top,var(--bg) 10%,transparent 60%)}
+.theme-dots{display:flex;gap:.45rem;flex-wrap:wrap}
+.theme-dots button{display:inline-flex;align-items:center;gap:.45rem;padding:.4rem .8rem .4rem .45rem;border-radius:999px;background:var(--glass);font-weight:600;font-size:.85rem;color:var(--mut);transition:transform .25s var(--spring),background .2s,color .2s}
+.theme-dots button i{width:1.15rem;height:1.15rem;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
+.theme-dots button.sel{color:var(--txt);background:var(--glass2)}
+.theme-dots button:focus{background:#fff;color:#000;transform:scale(1.06)}

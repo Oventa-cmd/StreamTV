@@ -15,7 +15,7 @@ const RAIL_MAX = 30, ROWS_MAX = 15, GRID_MAX = 300, LIST_MAX = 200;
 const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
   .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
-const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], hideVod: [], lite: false, saver: 5, nativeVod: true };
+const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], hideVod: [], lite: false, theme: 'graphite', saver: 5, nativeVod: true };
 
 let state = { channels: [], favs: [], recent: [], sources: [], settings: { ...DEFAULT_SETTINGS }, cat: 'Alle', view: 'home' };
 let playerOpen = false, sheetOpen = false, currentId = null, osdTimer = null, lastFocus = null, playerFocus = null, vod = null, editId = null, xtFmt = 'm3u8';
@@ -2562,6 +2562,7 @@ $('#swLite').addEventListener('click', () => { toggleSetting('lite'); applyLite(
 $('#swNative').addEventListener('click', () => { state.settings.nativeVod = state.settings.nativeVod === false; persist(); renderSettings(); });
 $$('#saverSeg [data-saver]').forEach(b => b.addEventListener('click', () => { state.settings.saver = Number(b.dataset.saver); persist(); renderSettings(); b.focus({ preventScroll: true }); }));
 $('#saverNow').addEventListener('click', () => openSaver());
+$$('#themeSeg [data-theme]').forEach(b => b.addEventListener('click', () => { state.settings.theme = b.dataset.theme; persist(); applyTheme(); b.focus({ preventScroll: true }); }));
 $('#swVpnAuto').addEventListener('click', () => toggleSetting('vpnAuto'));
 $('#swVpnReq').addEventListener('click', () => toggleSetting('vpnReq'));
 $('#vpnOpen').addEventListener('click', () => {
@@ -2683,6 +2684,11 @@ function sheetAnim() {
   sheetAnimT = setTimeout(() => s.classList.remove('anim'), 1100);
 }
 function applyLite() { document.body.classList.toggle('lite', !!state.settings.lite); }
+function applyTheme() {
+  const t = state.settings.theme || 'graphite';
+  document.documentElement.dataset.theme = t;
+  $$('#themeSeg [data-theme]').forEach(b => b.classList.toggle('sel', b.dataset.theme === t));
+}
 window.addEventListener('scroll', updateHeader, { passive: true });
 window.addEventListener('resize', moveTabInd);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(moveTabInd);
@@ -2696,6 +2702,7 @@ function tick() { $('#clock').textContent = new Date().toLocaleTimeString('de-DE
 /* ================= Start ================= */
 load();
 applyLite();
+applyTheme();
 SP.load();
 SP.onUpdate(() => { if (state.view === 'sport') renderSport(); if (sheetOpen && spSheet) renderSportSheet(); });
 EPG.load();
