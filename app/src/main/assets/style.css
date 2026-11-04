@@ -717,3 +717,7 @@ header.scrolled{background:rgba(var(--bgr),.72)}
 .theme-dots button i{width:1.15rem;height:1.15rem;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
 .theme-dots button.sel{color:var(--txt);background:var(--glass2)}
 .theme-dots button:focus{background:#fff;color:#000;transform:scale(1.06)}
+/* Suche: Sender, Serien, Filme als eigene Reihen untereinander */
+#searchGrid{display:block;padding:0}
+#searchGrid section+section{margin-top:.4rem}
+#searchGrid .section-label{margin-top:.6rem}
