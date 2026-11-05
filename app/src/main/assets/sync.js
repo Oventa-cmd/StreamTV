@@ -10,7 +10,7 @@
 const SYNC = {
   KEYS: ['streamtv.vodpos', 'streamtv.favs', 'streamtv.recent', 'streamtv.settings', 'streamtv.skip', 'streamtv.tracks', 'streamtv.remind'],
   META: 'streamtv.syncmeta',          // { mtime: {key: ms}, seen: {key: ms}, pulledAt }
-  LOCAL_SETTINGS: ['lite'],           // bleiben pro Gerät
+  LOCAL_SETTINGS: ['lite', 'vpnAuto', 'vpnReq', 'nativeVod'],   // bleiben pro Gerät (VPN-App, Player)
   applying: false,
   busy: false,
   timer: null,

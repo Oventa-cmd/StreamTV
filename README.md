@@ -94,7 +94,7 @@ adb shell am start -n de.oventa.streamtv/.MainActivity --es backup import
 
 ## Cloud-Sync über das Watchlist-Konto
 
-Mit angemeldetem Watchlist-Konto gleicht StreamTV automatisch ab (Tabelle `streamtv_sync`, nur für das eigene Konto lesbar): Weiterschauen-Fortschritt, Favoriten, Zuletzt gesehen, Einstellungen (außer „Effekte reduzieren“), gelernte Intro-Marken, Tonspur-Wahl und Sport-Erinnerungen.
+Mit angemeldetem Watchlist-Konto gleicht StreamTV automatisch ab (Tabelle `streamtv_sync`, nur für das eigene Konto lesbar): Weiterschauen-Fortschritt, Favoriten, Zuletzt gesehen, Einstellungen (außer „Effekte reduzieren“, VPN- und Player-Einstellungen), gelernte Intro-Marken, Tonspur-Wahl und Sport-Erinnerungen.
 **Nicht** synchronisiert werden IPTV-Zugänge und Kanallisten. Server, Benutzer und Passwort in Stream-Adressen werden vor dem Hochladen durch Platzhalter ersetzt und auf dem anderen Gerät mit dessen eigenem Zugang wieder eingesetzt.
 Abgleich beim Start, beim Zurückkehren in die App, nach Änderungen (20 s verzögert) und beim Verlassen der App.
 
