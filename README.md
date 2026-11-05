@@ -75,3 +75,19 @@ curl -L -o StreamTV.apk https://github.com/Oventa-cmd/StreamTV/releases/latest/d
 adb connect <IP-des-Fire-TV>:5555
 adb install -r StreamTV.apk
 ```
+
+## Umzug auf einen neuen Fernseher (z. B. Google TV / TCL)
+
+`tools/Umzug-auf-neuen-TV.bat` doppelklicken. Das Skript
+1. sichert die StreamTV-Daten vom Fire TV (Quellen, Kanäle, Favoriten, Einstellungen, **Weiterschauen-Fortschritt**, Intro-Marken, Watchlist-Konto) nach `streamtv-backup-<Datum>.json`,
+2. lädt die neuesten APKs von StreamTV und TV-Launcher,
+3. installiert beide auf dem neuen TV und richtet Home-Dienst und Rechte des Launchers ein,
+4. spielt die Sicherung ein (Fortschritt wird zusammengeführt, neuerer Stand gewinnt).
+
+Manuell:
+```
+adb shell am start -n de.oventa.streamtv/.MainActivity --es backup export
+adb pull /sdcard/Android/data/de.oventa.streamtv/files/streamtv-backup.json
+adb push streamtv-backup.json /sdcard/Android/data/de.oventa.streamtv/files/
+adb shell am start -n de.oventa.streamtv/.MainActivity --es backup import
+```

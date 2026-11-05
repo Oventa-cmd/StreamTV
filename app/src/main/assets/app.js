@@ -2695,7 +2695,7 @@ $$('#themeSeg [data-theme]').forEach(b => b.addEventListener('click', () => { st
 $('#swVpnAuto').addEventListener('click', () => toggleSetting('vpnAuto'));
 $('#swVpnReq').addEventListener('click', () => toggleSetting('vpnReq'));
 $('#vpnOpen').addEventListener('click', () => {
-  if (!bridge) return toast('Nur in der Fire-TV-App verfügbar');
+  if (!bridge) return toast('Nur in der TV-App verfügbar');
   if (!bridge.openVpn()) toast('ProtonVPN ist nicht installiert');
 });
 $('#demoAdd').addEventListener('click', () => {
@@ -2719,7 +2719,7 @@ function renderVpn() {
   const v = vpn(), b = $('#vpnBadge');
   if (!v || !v.installed) {
     b.classList.add('hidden');
-    $('#vpnFoot').textContent = !bridge ? 'Nur in der Fire-TV-App verfügbar.' : 'ProtonVPN ist auf diesem Gerät nicht installiert.';
+    $('#vpnFoot').textContent = !bridge ? 'Nur in der TV-App verfügbar.' : 'ProtonVPN ist auf diesem Gerät nicht installiert.';
     return;
   }
   b.classList.remove('hidden');
@@ -2781,14 +2781,14 @@ function renderUpdate() {
   const latest = u.latest ? u.latest.replace(/^v/, '') : '';
   let html = `<div class="row-item"><div class="meta">
       <b>${avail ? `Update verfügbar: Version ${esc(latest)}` : cur && latest ? 'StreamTV ist aktuell' : 'Installierte Version'}</b>
-      <small>Installiert: ${esc(cur || '– (nur in der Fire-TV-App)')}${latest ? ' · Neueste: ' + esc(latest) : ''} · geprüft: ${esc(when)}</small>
+      <small>Installiert: ${esc(cur || '– (nur in der TV-App)')}${latest ? ' · Neueste: ' + esc(latest) : ''} · geprüft: ${esc(when)}</small>
       ${u.err ? `<small class="err">${esc(u.err)}</small>` : ''}
     </div><div class="actions"><button class="mini focusable" id="updCheck" ${UPD.busy ? 'disabled' : ''}>${UPD.busy ? 'Prüfe …' : 'Jetzt prüfen'}</button></div></div>`;
   if (avail) html += `<div class="row-item upd-cmd"><div class="meta"><b>Am PC aktualisieren (ADB)</b>
-      <code>curl -L -o StreamTV.apk ${esc(UPD.APK)}\nadb connect &lt;IP-des-Fire-TV&gt;:5555\nadb install -r StreamTV.apk</code>
+      <code>curl -L -o StreamTV.apk ${esc(UPD.APK)}\nadb connect &lt;IP-des-Fernsehers&gt;:5555\nadb install -r StreamTV.apk</code>
       <small>Oder in der Downloader-App: ${esc(UPD.APK)}</small></div></div>`;
   box.innerHTML = html;
-  $('#updFoot').textContent = avail ? 'Die IP steht auf dem Fire TV unter Einstellungen → Mein Fire TV → Info → Netzwerk. Einstellungen und Daten bleiben beim Update erhalten.' : '';
+  $('#updFoot').textContent = avail ? 'Die IP steht unter Einstellungen → Netzwerk (Fire TV: Mein Fire TV → Info → Netzwerk). Einstellungen und Daten bleiben beim Update erhalten.' : '';
   $$('.tabbar [data-view="settings"]').forEach(b => b.classList.toggle('badge', avail));
 }
 document.addEventListener('click', e => { if (e.target.closest('#updCheck')) checkUpdate(true); });
@@ -2866,6 +2866,48 @@ if (state.settings.autoRefresh) {
 }
 
 /* ================= Zugangsdaten vom Laptop (per ADB übertragen) ================= */
+/* ---------- Umzug auf ein anderes Gerät (Sicherung per adb) ----------
+ * Export: adb shell am start -n de.oventa.streamtv/.MainActivity --es backup export
+ *   -> /sdcard/Android/data/de.oventa.streamtv/files/streamtv-backup.json
+ * Import: Datei an dieselbe Stelle kopieren, dann --es backup import
+ * Enthält Quellen, Kanäle, Favoriten, Einstellungen, Weiterschauen-Fortschritt,
+ * Intro-Marken, Tonspur-Wahl, Erinnerungen und das Watchlist-Konto. Caches nicht. */
+const BACKUP_SKIP = ['streamtv.epg', 'streamtv.tmdb', 'streamtv.sport', 'streamtv.update'];
+function exportBackup() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith('streamtv.') && !BACKUP_SKIP.includes(k)) data[k] = localStorage.getItem(k);
+  }
+  let ok = false;
+  try { ok = !!(bridge && bridge.writeBackup(JSON.stringify({ app: 'StreamTV', v: 1, at: Date.now(), data }))); } catch (e) {}
+  const n = Object.keys(JSON.parse(data['streamtv.vodpos'] || '{}')).length;
+  toast(ok ? `Sicherung erstellt · ${n} Folgen/Filme mit Fortschritt` : 'Sicherung fehlgeschlagen');
+  return ok;
+}
+function importBackup(text) {
+  let b = null;
+  try { b = JSON.parse(text); } catch (e) {}
+  if (!b || b.app !== 'StreamTV' || !b.data) { toast('Keine gültige StreamTV-Sicherung gefunden'); return false; }
+  for (const [k, v] of Object.entries(b.data)) {
+    if (typeof v !== 'string' || !k.startsWith('streamtv.')) continue;
+    if (k === VP.STORE) {
+      // Fortschritt zusammenführen: pro Titel gewinnt der neuere Stand
+      let cur = {}, inc = {};
+      try { cur = JSON.parse(localStorage.getItem(k) || '{}'); inc = JSON.parse(v); } catch (e) {}
+      for (const id in inc) if (!cur[id] || (inc[id].at || 0) > (cur[id].at || 0)) cur[id] = inc[id];
+      localStorage.setItem(k, JSON.stringify(cur));
+    } else {
+      localStorage.setItem(k, v);
+    }
+  }
+  toast('Daten übernommen – StreamTV startet neu …');
+  setTimeout(() => location.reload(), 500);
+  return true;
+}
+window.exportBackup = exportBackup;
+window.importBackup = importBackup;
+
 // Aufruf durch die App: importConfig("<Inhalt von zugang.txt>")
 async function importConfig(text) {
   const cfg = {};

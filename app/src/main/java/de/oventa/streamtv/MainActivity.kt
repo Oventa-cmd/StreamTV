@@ -28,6 +28,7 @@ class MainActivity : Activity() {
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var pendingConfig: String? = null
     private var pendingDeep: String? = null
+    private var pendingBackup: String? = null
     private var pageReady = false
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
@@ -63,10 +64,14 @@ class MainActivity : Activity() {
                 pageReady = true
                 deliverConfig()
                 deliverDeep()
+                deliverBackup()
             }
         }
         takeConfig(intent)
         takeDeep(intent)
+        takeBackup(intent)
+        // Ordner fuer die Sicherung anlegen (adb push braucht ihn beim Umzug)
+        try { getExternalFilesDir(null) } catch (_: Exception) { }
         web.webChromeClient = object : WebChromeClient() {
             // JS-Meldungen und -Fehler im Logcat (Tag StreamTV-JS) – für Fehlersuche per adb logcat
             override fun onConsoleMessage(m: ConsoleMessage): Boolean {
@@ -153,6 +158,15 @@ class MainActivity : Activity() {
             getSharedPreferences(ContinueProvider.PREFS, Context.MODE_PRIVATE).edit().putString(ContinueProvider.KEY, json).apply()
         }
 
+        /** Sicherung fuer den Umzug auf ein anderes Geraet (per adb pull abholbar). */
+        @JavascriptInterface
+        fun writeBackup(json: String): Boolean = try {
+            val dir = getExternalFilesDir(null) ?: throw IllegalStateException("kein Speicher")
+            val tmp = java.io.File(dir, BACKUP_FILE + ".tmp")
+            tmp.writeText(json, Charsets.UTF_8)
+            tmp.renameTo(java.io.File(dir, BACKUP_FILE))
+        } catch (e: Exception) { Log.w("StreamTV", "Sicherung fehlgeschlagen", e); false }
+
         @JavascriptInterface
         fun appVersion(): String = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: ""
@@ -166,6 +180,30 @@ class MainActivity : Activity() {
         deliverConfig()
         takeDeep(intent)
         deliverDeep()
+        takeBackup(intent)
+        deliverBackup()
+    }
+
+    // Umzug: adb shell am start -n de.oventa.streamtv/.MainActivity --es backup export|import
+    private fun takeBackup(i: Intent?) {
+        val b = i?.getStringExtra("backup") ?: return
+        i!!.removeExtra("backup")
+        if (b == "export" || b == "import") pendingBackup = b
+    }
+
+    private fun deliverBackup() {
+        val b = pendingBackup ?: return
+        if (!pageReady) return
+        pendingBackup = null
+        if (b == "export") {
+            web.evaluateJavascript("window.exportBackup && exportBackup()", null)
+            return
+        }
+        val text = try {
+            java.io.File(getExternalFilesDir(null), BACKUP_FILE).readText(Charsets.UTF_8)
+        } catch (e: Exception) { null }
+        val arg = if (text == null) "''" else JSONObject.quote(text)
+        web.evaluateJavascript("window.importBackup && importBackup($arg)", null)
     }
 
     private fun takeDeep(i: Intent?) {
@@ -259,5 +297,6 @@ class MainActivity : Activity() {
     companion object {
         private const val REQ_FILE = 42
         private const val PROTON = "ch.protonvpn.android"
+        const val BACKUP_FILE = "streamtv-backup.json"
     }
 }
