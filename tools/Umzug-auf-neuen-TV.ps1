@@ -119,18 +119,13 @@ if ($backup -and (Test-Path $backup)) {
   Write-Host 'Keine Sicherung vorhanden – StreamTV startet leer. Zugangsdaten dann mit Zugang-uebertragen.bat.' -ForegroundColor Yellow
 }
 
-# ---------------- Optional: Google-TV-Startseite ganz abschalten ----------------
-Write-Host ''
-Write-Host 'Optional: Google-TV-Startseite deaktivieren, damit Home IMMER direkt den TV-Launcher öffnet.' -ForegroundColor Cyan
-Write-Host 'Ohne das übernimmt der Home-Dienst – kurzes Aufblitzen der Google-Startseite möglich.'
-$hard = Read-Host 'Deaktivieren? (j/N)'
-if ($hard -match '^[jJyY]') {
-  & $adb -s $t shell pm disable-user --user 0 com.google.android.apps.tv.launcherx 2>&1 | Out-Host
-  & $adb -s $t shell pm disable-user --user 0 com.google.android.tungsten.setupwraith 2>&1 | Out-Host
-  Write-Host '  Rückgängig (falls nötig):' -ForegroundColor Yellow
-  Write-Host "  adb -s $t shell pm enable com.google.android.apps.tv.launcherx"
-  Write-Host "  adb -s $t shell pm enable com.google.android.tungsten.setupwraith"
-}
+# ---------------- Google-TV-Startseite abschalten (in den Launcher-Einstellungen wieder einschaltbar) ----------------
+Step 'Google-TV-Startseite abschalten – Home öffnet immer den TV-Launcher'
+& $adb -s $t shell pm disable-user --user 0 com.google.android.apps.tv.launcherx 2>&1 | Out-Host
+& $adb -s $t shell pm disable-user --user 0 com.google.android.tungsten.setupwraith 2>&1 | Out-Host
+& $adb -s $t shell am start -n "$LPKG/.MainActivity" | Out-Null
+Write-Host '  Wieder einschalten: Launcher > Einstellungen > System > „Google-TV-Startseite erreichbar“.' -ForegroundColor Yellow
+Write-Host "  Notfall vom PC: adb -s $t shell pm enable com.google.android.apps.tv.launcherx"
 
 Write-Host ''
 Write-Host 'Fertig. Danach noch Watchlist-Anmelden.bat (Konto für den Launcher) ausführen.' -ForegroundColor Green
