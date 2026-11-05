@@ -1891,13 +1891,68 @@ function doSkip() {
 $('#pSkip').addEventListener('click', e => { e.stopPropagation(); doSkip(); });
 
 /* ---------- Watchlist-Sync (ab 90 % gesehen) ---------- */
+/** TMDB-ID zu einem Anbieter-Titel suchen, z. B. „The Terminal List (2022) (US) (DIE ABSCHUSSLISTE)“. */
+const tmdbGuess = {};
+async function guessTmdb(show, movie) {
+  const raw = cleanName(String(show || ''));
+  const year = (raw.match(/\((19|20)\d{2}\)/) || [])[0];
+  const base = raw.replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/\s+/g, ' ').trim();
+  const k = (movie ? 'm:' : 't:') + base.toLowerCase();
+  if (k in tmdbGuess) return tmdbGuess[k];
+  if (!base || !TM.key()) return null;
+  const type = movie ? 'movie' : 'tv';
+  try {
+    const j = await TM.get('/search/' + type, { query: base, include_adult: 'false', ...(year ? { [movie ? 'year' : 'first_air_date_year']: year.slice(1, 5) } : {}) });
+    const list = TM.picks(j, type);
+    const want = XS.norm(base);
+    const p = list.find(x => XS.norm(x.title) === want || XS.norm(x.orig) === want) || list[0] || null;
+    return (tmdbGuess[k] = p ? type + ':' + p.id : null);
+  } catch (e) { return null; }
+}
+/** Fehlende TMDB-ID an Weiterschauen-Einträgen derselben Serie nachtragen. */
+function rememberTmdb(acc, sid, tmdb) {
+  const all = VP.all(); let n = 0;
+  for (const id in all) { const m = all[id].m; if (m && m.acc === acc && m.sid === sid && !m.tmdb) { m.tmdb = tmdb; n++; } }
+  if (n) VP.save();
+}
+/** Bereits fertig geschaute Folgen ohne Watchlist-Eintrag nachträglich übertragen (einmal pro Folge). */
+let backfillBusy = false;
+async function backfillWatched() {
+  if (backfillBusy || !WL.connected || !TM.key()) return;
+  backfillBusy = true;
+  let n = 0;
+  try {
+    const all = VP.all();
+    const ids = Object.keys(all).filter(id => all[id].m && !all[id].m.wl && VP.done(id)).sort((a, b) => all[a].at - all[b].at);
+    for (const id of ids) {
+      const e = all[id], m = e.m;
+      let tm = m.tmdb;
+      if (!tm) { tm = await guessTmdb(m.show, m.movie); if (tm) rememberTmdb(m.acc, m.sid, tm); }
+      if (!tm) { m.wl = 'none'; continue; }
+      const t = String(tm).split(':');
+      try {
+        await WL.markWatched(t[0] === 'movie' ? 'movie' : 'tv', Number(t[1]), Number(m.season) || 0, Number(m.num) || 0);
+        m.wl = 1; n++;
+      } catch (err) { break; }
+    }
+    VP.save();
+    if (n) { toast(`✓ Watchlist: ${n} gesehene Folge${n > 1 ? 'n' : ''} nachgetragen`); renderHome(); }
+  } finally { backfillBusy = false; }
+}
+
 async function syncWatched(v) {
   v.synced = true;
+  if (!WL.connected) return;
+  if (v.ctx && !v.ctx.tmdb) {   // Anbieter-Titel ohne TMDB-ID: per Name suchen
+    const tm = await guessTmdb(v.ctx.name || v.show, !!v.ep.movie);
+    if (tm) { v.ctx.tmdb = tm; rememberTmdb(v.ctx.acc, v.ctx.sid, tm); }
+  }
   const t = v.ctx && v.ctx.tmdb ? String(v.ctx.tmdb).split(':') : null;
-  if (!t || !t[1] || !WL.connected) return;
+  if (!t || !t[1]) return;
   const job = { type: t[0] === 'movie' ? 'movie' : 'tv', id: Number(t[1]), season: Number(v.ep.season) || 0, num: Number(v.ep.num) || 0 };
   try {
     const st = await WL.markWatched(job.type, job.id, job.season, job.num);
+    const pe = VP.get(v.ep.id); if (pe && pe.m) { pe.m.wl = 1; VP.save(); }
     if (st) toast(job.type === 'movie' ? '✓ Watchlist: Film als gesehen markiert'
       : `✓ Watchlist: S${job.season} E${job.num} gesehen${st === 'done' ? ' – Serie abgeschlossen' : ''}`);
   } catch (e) {
@@ -2939,7 +2994,7 @@ setInterval(() => {   // laufende Sendung aktuell halten
 WL.load();
 TM.load();
 persist();
-setTimeout(() => SYNC.run(true), 3000);   // Cloud-Sync über das Watchlist-Konto
+setTimeout(() => SYNC.run(true).finally(() => setTimeout(backfillWatched, 2000)), 3000);   // Cloud-Sync + fehlende Watchlist-Einträge
 renderAll();
 show('home');
 tick(); setInterval(tick, 15000);
