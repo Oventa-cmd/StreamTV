@@ -498,6 +498,7 @@ function renderSettings() {
         ${x.loading ? `<small>Lädt …</small>` : x.error ? `<small class="err">Fehler: ${esc(x.error)}</small>` : ''}
       </div>
       <div class="actions">
+        ${x.type === 'xtream' ? `<button class="mini focusable" data-src-act="fmt" data-id="${esc(x.id)}">Format: ${x.format === 'ts' ? 'MPEG-TS' : 'HLS'}</button>` : ''}
         <button class="mini focusable" data-src-act="refresh" data-id="${esc(x.id)}">Aktualisieren</button>
         <button class="mini focusable" data-src-act="del" data-id="${esc(x.id)}">Entfernen</button>
       </div>
@@ -2598,6 +2599,11 @@ document.addEventListener('click', e => {
   if (sa) {
     const s = state.sources.find(x => x.id === sa.dataset.id);
     if (sa.dataset.srcAct === 'refresh' && s && !s.loading) refreshSource(s);
+    if (sa.dataset.srcAct === 'fmt' && s && !s.loading) {
+      s.format = s.format === 'ts' ? 'm3u8' : 'ts';
+      toast(`Format: ${s.format === 'ts' ? 'MPEG-TS' : 'HLS'} – Kanäle werden neu geladen`);
+      refreshSource(s);
+    }
     if (sa.dataset.srcAct === 'del') removeSource(sa.dataset.id);
     return;
   }
