@@ -167,6 +167,23 @@ class MainActivity : Activity() {
             tmp.renameTo(java.io.File(dir, BACKUP_FILE))
         } catch (e: Exception) { Log.w("StreamTV", "Sicherung fehlgeschlagen", e); false }
 
+        /** Spracheingabe starten (Google-Spracherkennung des Fernsehers). Ergebnis -> onVoice(text). */
+        @JavascriptInterface
+        fun listen(): Boolean {
+            val i = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "de-DE")
+                putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Was möchtest du schauen?")
+                putExtra(android.speech.RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            }
+            if (packageManager.resolveActivity(i, 0) == null) return false
+            runOnUiThread { try { startActivityForResult(i, REQ_VOICE) } catch (_: Exception) { } }
+            return true
+        }
+
+        @JavascriptInterface
+        fun deviceName(): String = android.os.Build.MODEL ?: "TV"
+
         @JavascriptInterface
         fun appVersion(): String = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: ""
@@ -246,6 +263,12 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQ_VOICE) {
+            val text = data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (resultCode == RESULT_OK && !text.isNullOrBlank())
+                web.evaluateJavascript("window.onVoice && onVoice(" + JSONObject.quote(text) + ")", null)
+            return
+        }
         if (requestCode == REQ_FILE) {
             fileCallback?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data))
             fileCallback = null
@@ -279,7 +302,7 @@ class MainActivity : Activity() {
 
     // Home-Taste o. Ä.: laufenden Stream beenden, damit kein Ton im Hintergrund weiterläuft
     override fun onStop() {
-        web.evaluateJavascript("try{ if (playerOpen) closePlayer(); }catch(e){}", null)
+        web.evaluateJavascript("try{ if (playerOpen) closePlayer(); }catch(e){} try{ SYNC.run(false); }catch(e){}", null)
         super.onStop()
     }
 
@@ -296,6 +319,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQ_FILE = 42
+        private const val REQ_VOICE = 43
         private const val PROTON = "ch.protonvpn.android"
         const val BACKUP_FILE = "streamtv-backup.json"
     }

@@ -183,6 +183,7 @@ async function refreshSource(src, quiet) {
     Object.assign(src, { count: list.length, updated: Date.now(), error: '' });
     resetCatalogs(); setTimeout(bgCatalogs, 500);
     if (!quiet) toast(`${src.name}: ${list.length} Kanäle geladen`);
+    setTimeout(() => SYNC.run(true), 1000);   // Fortschritt/Favoriten dieser Quelle aus der Cloud übernehmen
     return true;
   } catch (e) {
     src.error = e.message;
@@ -514,7 +515,7 @@ function renderWlGroup() {
   if (WL.connected) {
     const n = (WL.s.items || []).length;
     html += `<div class="row-item"><div class="meta"><b>Serien-Watchlist: ${esc(WL.s.email || 'angemeldet')}</b>
-      <small>${n} Titel auf der Watchlist · TMDB-Schlüssel ${WL.s.tmdb ? '✓' : 'fehlt im Konto'}</small></div>
+      <small>${n} Titel auf der Watchlist · TMDB-Schlüssel ${WL.s.tmdb ? '✓' : 'fehlt im Konto'} · Sync ${SYNC.meta().pulledAt ? 'zuletzt ' + new Date(SYNC.meta().pulledAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'ausstehend'}</small></div>
       <div class="actions"><button class="mini focusable" id="wlReload">Empfehlungen neu laden</button><button class="mini focusable" id="wlLogout">Abmelden</button></div></div>`;
   } else {
     html += `<div class="form-grid">
@@ -1379,6 +1380,14 @@ async function openDeep(uri) {
   if (sheetOpen) closeSheet();
   await new Promise(r => afterPops(r));
   const route = parts[0] || 'home';
+  // streamtv://search?q=…&ai=1  (Sprach-/Claude-Suche aus dem TV-Launcher)
+  if (route === 'search') {
+    const text = (q.get('q') || '').trim();
+    if (q.get('voice') === '1' && !text) { show('search'); return startVoice(); }
+    if (q.get('ai') === '1' && text) return onVoice(text);
+    show('search'); const el = $('#q'); el.value = text.slice(0, 80); el.dispatchEvent(new Event('input'));
+    return;
+  }
   if (route === 'resume' && parts[1]) {
     show('home');
     if (VP.entry(parts[1])) return playResume(parts[1]);
@@ -2572,18 +2581,101 @@ document.addEventListener('click', e => {
   }
 });
 let searchT = null;
-$('#q').addEventListener('input', () => { clearTimeout(searchT); searchT = setTimeout(renderSearch, 180); searchShows(); });
+$('#q').addEventListener('input', () => { if ($('#q').value.trim() !== aiQuery) { aiSeq++; aiQuery = ''; $('#searchAi').innerHTML = ''; } clearTimeout(searchT); searchT = setTimeout(renderSearch, 180); searchShows(); });
+
+/* ---------- Smarte Suche mit Claude (Supabase-Funktion smart-search) + Sprache ---------- */
+let aiQuery = '', aiSeq = 0;
+function startVoice() {
+  if (!bridge || typeof bridge.listen !== 'function') return toast('Spracheingabe nur in der TV-App');
+  if (!bridge.listen()) toast('Keine Spracherkennung auf diesem Gerät gefunden');
+}
+// Aufruf durch die App mit dem erkannten Text
+window.onVoice = text => {
+  text = String(text || '').trim();
+  if (!text) return;
+  if (state.view !== 'search') show('search');
+  const q = $('#q'); q.value = text.slice(0, 80); q.dispatchEvent(new Event('input'));
+  aiSearch(text);
+};
+function aiContext() {
+  const wl = (WL.s.items || []).slice(0, 25).map(o => `${o.title} (${o.status})`);
+  const seen = VP.continueList(8).map(v => v.m.show);
+  return [wl.length ? 'Watchlist: ' + wl.join(', ') : '', seen.length ? 'Zuletzt: ' + seen.join(', ') : ''].filter(Boolean).join(' | ');
+}
+/** Bester Treffer im Anbieter-Katalog für einen Titel (Original- oder deutscher Titel). */
+function aiCatalogHit(it) {
+  const kind = it.type === 'movie' ? 'vod' : 'series';
+  for (const t of [it.title_de, it.title].filter(Boolean)) {
+    const hits = catalogHits(kind, XS.norm(t));
+    if (!hits.length) continue;
+    const items = CAT[kind].items, want = XS.norm(t);
+    // exakter Name zuerst, sonst passendes Jahr, sonst erster Treffer
+    const exact = hits.find(i => items[i].it.n === want);
+    const year = it.year && hits.find(i => String(items[i].it.year || '').startsWith(String(it.year)));
+    return { kind, i: exact != null ? exact : year != null && year !== false ? year : hits[0] };
+  }
+  return null;
+}
+async function aiSearch(text) {
+  if (!text) return toast('Erst etwas eintippen oder 🎤 drücken');
+  if (!WL.connected) return toast('Claude-Suche braucht das Watchlist-Konto (Einstellungen)');
+  const seq = ++aiSeq; aiQuery = text;
+  const box = $('#searchAi');
+  box.innerHTML = railHTML('✨ Claude denkt nach …', skeletons(5));
+  try {
+    if (!await WL.ensureToken()) throw new Error('Watchlist: bitte neu anmelden');
+    const r = await WL.http('POST', '/functions/v1/smart-search', { q: text, context: aiContext() });
+    const j = JSON.parse(r.text || '{}');
+    if (r.status < 200 || r.status > 299) throw new Error(j.error || ('Fehler ' + r.status));
+    if (seq !== aiSeq) return;
+    const xt = XS.accounts().length > 0;
+    let html = '';
+    // Live-Sender
+    const chans = [];
+    for (const name of j.channels || []) {
+      const n = name.toLowerCase();
+      visibleChannels().filter(c => c.name.toLowerCase().includes(n)).slice(0, 4).forEach(c => { if (!chans.includes(c)) chans.push(c); });
+    }
+    if (chans.length) html += railHTML('Sender', chans.slice(0, 12).map(tileHTML).join(''), chans.length);
+    // Serien & Filme
+    if (xt) {
+      const seen = new Set(), tiles = [];
+      for (const it of j.items || []) {
+        const h = aiCatalogHit(it);
+        if (!h || seen.has(h.kind + h.i)) continue;
+        seen.add(h.kind + h.i);
+        tiles.push(serTileHTML(h.kind, CAT[h.kind].items[h.i], h.i));
+      }
+      if (tiles.length) html += railHTML('Bei deinem Anbieter', tiles.join(''), tiles.length);
+    } else if (TM.key()) {
+      const res = await Promise.all((j.items || []).slice(0, 10).map(it => TM.search(it.title_de || it.title).then(l => l.find(p => p.type === it.type) || l[0]).catch(() => null)));
+      const tiles = res.filter(Boolean).map(p => showTileHTML(p));
+      if (tiles.length) html += railHTML('Serien & Filme', tiles.join(''), tiles.length);
+    }
+    if (seq !== aiSeq) return;
+    const head = `<p class="ai-answer">✨ ${esc(j.answer || 'Vorschläge von Claude')}</p>`;
+    keepFocus(() => { box.innerHTML = head + (html || `<p class="empty">Nichts davon gibt es bei deinem Anbieter.</p>`); });
+    const first = box.querySelector('.tile.focusable');
+    if (first && document.activeElement && document.activeElement.dataset.key === 'ai') first.focus({ preventScroll: true });
+  } catch (e) {
+    if (seq === aiSeq) box.innerHTML = `<p class="empty">Claude-Suche: ${esc(e.message)}</p>`;
+  }
+}
 
 /* ---------- Bildschirmtastatur (wie bei Netflix) ---------- */
 const KBD_KEYS = 'abcdefghijklmnopqrstuvwxyzäöüß1234567890'.split('');
 function renderKbd() {
   $('#kbd').innerHTML =
+    `<button class="key wide ai focusable" data-key="voice" type="button" aria-label="Sprechen">🎤 Sprechen</button>` +
+    `<button class="key wide ai focusable" data-key="ai" type="button" aria-label="Mit Claude suchen">✨ Claude</button>` +
     `<button class="key wide focusable" data-key=" " type="button" aria-label="Leerzeichen">␣ Leer</button>` +
     `<button class="key wide focusable" data-key="⌫" type="button" aria-label="Löschen">⌫</button>` +
     KBD_KEYS.map(k => `<button class="key focusable" data-key="${k}" type="button">${k}</button>`).join('') +
     `<button class="key full focusable" data-key="clear" type="button">Leeren</button>`;
 }
 function kbdInput(k) {
+  if (k === 'voice') return startVoice();
+  if (k === 'ai') return aiSearch($('#q').value.trim());
   const q = $('#q');
   let v = q.value;
   if (k === '⌫') v = v.slice(0, -1);
@@ -2613,6 +2705,7 @@ async function wlLogin() {
   const b = $('#wlLogin'); b.disabled = true; b.textContent = 'Anmelden …';
   try {
     await WL.login(mail, pass);
+    SYNC.run(true);
     toast('Angemeldet – lade Empfehlungen …');
     TM.clear(); renderSettings(); loadDiscover(true);
   } catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Anmelden'; }
@@ -2736,7 +2829,7 @@ function vpnOnStart() {
     setTimeout(() => { const w = vpn(); if (w && !w.active) bridge.openVpn(); }, 1500);
   }
 }
-window.onAppResume = () => { renderVpn(); setTimeout(renderVpn, 2500); if (playerOpen && (RC.waiting || RC.dead)) retryNow(); };
+window.onAppResume = () => { SYNC.run(false); renderVpn(); setTimeout(renderVpn, 2500); if (playerOpen && (RC.waiting || RC.dead)) retryNow(); };
 
 /* ================= Update-Hinweis (GitHub-Releases) ================= */
 const UPD = {
@@ -2846,6 +2939,7 @@ setInterval(() => {   // laufende Sendung aktuell halten
 WL.load();
 TM.load();
 persist();
+setTimeout(() => SYNC.run(true), 3000);   // Cloud-Sync über das Watchlist-Konto
 renderAll();
 show('home');
 tick(); setInterval(tick, 15000);
@@ -2942,7 +3036,7 @@ async function importConfig(text) {
   }
   // Serien-Watchlist
   if (cfg.WATCHLIST_EMAIL && cfg.WATCHLIST_PASSWORT && (!WL.connected || (WL.s.email || '').toLowerCase() !== cfg.WATCHLIST_EMAIL.trim().toLowerCase())) {
-    try { await WL.login(cfg.WATCHLIST_EMAIL, cfg.WATCHLIST_PASSWORT); TM.clear(); loadDiscover(true); done.push('Watchlist angemeldet'); }
+    try { await WL.login(cfg.WATCHLIST_EMAIL, cfg.WATCHLIST_PASSWORT); TM.clear(); loadDiscover(true); SYNC.run(true); done.push('Watchlist angemeldet'); }
     catch (e) { done.push('Watchlist: ' + e.message); }
   }
   if (cfg.TMDB_KEY) { state.settings.tmdbKey = cfg.TMDB_KEY; persist(); TM.clear(); loadDiscover(true); done.push('TMDB-Schlüssel gespeichert'); }

@@ -91,3 +91,15 @@ adb pull /sdcard/Android/data/de.oventa.streamtv/files/streamtv-backup.json
 adb push streamtv-backup.json /sdcard/Android/data/de.oventa.streamtv/files/
 adb shell am start -n de.oventa.streamtv/.MainActivity --es backup import
 ```
+
+## Cloud-Sync über das Watchlist-Konto
+
+Mit angemeldetem Watchlist-Konto gleicht StreamTV automatisch ab (Tabelle `streamtv_sync`, nur für das eigene Konto lesbar): Weiterschauen-Fortschritt, Favoriten, Zuletzt gesehen, Einstellungen (außer „Effekte reduzieren“), gelernte Intro-Marken, Tonspur-Wahl und Sport-Erinnerungen.
+**Nicht** synchronisiert werden IPTV-Zugänge und Kanallisten. Server, Benutzer und Passwort in Stream-Adressen werden vor dem Hochladen durch Platzhalter ersetzt und auf dem anderen Gerät mit dessen eigenem Zugang wieder eingesetzt.
+Abgleich beim Start, beim Zurückkehren in die App, nach Änderungen (20 s verzögert) und beim Verlassen der App.
+
+## Claude-Suche & Spracheingabe
+
+In der Suche: **🎤 Sprechen** (Google-Spracherkennung des TVs) oder **✨ Claude** (getippter Text). Claude versteht freie Anfragen („was Düsteres wie Dark“, „Bundesliga live“) und liefert Titel, die StreamTV im Katalog deines Anbieters sucht.
+Läuft über die Supabase-Funktion `smart-search` (Quelltext in `supabase/functions/smart-search`). Der Anthropic-Schlüssel liegt nur als Secret `ANTHROPIC_API_KEY` im Supabase-Projekt. Optional `CLAUDE_MODEL` (Standard `claude-haiku-5-5`).
+Deep Link: `streamtv://search?q=<Text>&ai=1` bzw. `streamtv://search?voice=1`.

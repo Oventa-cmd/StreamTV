@@ -574,6 +574,8 @@ body.lite .sv-bg{filter:brightness(.4)}
 .key.full{grid-column:span 2;font-size:.78rem;color:var(--mut)}
 .key:focus{background:#fff;color:#000;transform:scale(1.12);box-shadow:0 8px 22px rgba(0,0,0,.5);position:relative;z-index:1}
 .kbd-hint{margin-top:.7rem}
+.key.ai{color:var(--txt);background:rgba(255,255,255,.12)}
+.ai-answer{margin:.2rem 0 .4rem;color:var(--mut);font-size:.95rem}
 .search-res{flex:1;min-width:0}
 .search-res .grid{padding:.4rem 0 1rem;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr))}
 .search-res #searchInfo{margin:.2rem 0 .2rem}
