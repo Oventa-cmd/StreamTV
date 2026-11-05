@@ -1658,7 +1658,7 @@ function hideOsdSoon() {
   clearTimeout(osdTimer);
   if (vod && (SC.on || video.paused)) { osdTimer = setTimeout(hideOsdSoon, 4500); return; }
   osdEl().classList.add('hide');
-  if (vod) { VC.zone = skipKind && !skipSeg.osd ? 'skip' : 'bar'; renderVosd(); }
+  if (vod) { VC.zone = skipKind ? 'skip' : 'bar'; renderVosd(); }
   checkSkip();
 }
 function openPlayer(id) {
@@ -1757,8 +1757,10 @@ async function fillNext() {
 }
 /* ---------- Intro, Rückblick, Abspann überspringen ---------- */
 // Quellen: TheIntroDB → selbst gelernt pro Serie → Faustregel (siehe skip.js)
-const INTRO_WINDOW = 300, INTRO_SKIP = 85;
-let skipKind = null, skipSeg = null, skipTimer = null, skipShownAt = 0;
+// INTRO_SKIP bewusst knapp: lieber noch im Intro landen als schon in der Folge
+// AUTO_NEXT: Sekunden bis „Nächste Folge“ automatisch ausgelöst wird (Auto-Play)
+const INTRO_WINDOW = 300, INTRO_SKIP = 60, LEARN_MARGIN = 4, AUTO_NEXT = 10;
+let skipKind = null, skipSeg = null, skipTimer = null, skipShownAt = 0, autoTimer = null, autoLeft = 0;
 const outroLen = d => Math.max(60, Math.min(150, d * 0.04));
 /** Schlüssel zum Lernen: TMDB-Serie, sonst Anbieter-Serie. */
 const serKey = v => !v || v.ep.movie ? null : v.ctx && v.ctx.tmdb ? v.ctx.tmdb : v.ctx && v.ctx.acc ? 'xs:' + v.ctx.acc + '|' + v.ctx.sid : 'show:' + v.show;
@@ -1771,8 +1773,8 @@ async function loadSegments(v) {
   const L = SK.learned(serKey(v)), segs = [];
   if (db && db.recap && db.recap.e) segs.push({ kind: 'recap', from: db.recap.s, to: db.recap.e, target: db.recap.e, src: 'db' });
   if (db && db.intro) segs.push({ kind: 'intro', from: db.intro.s, to: db.intro.e || d, target: db.intro.e || d, src: 'db' });
-  else if (!v.ep.movie && L.intro) segs.push({ kind: 'intro', from: Math.max(0, L.intro.s - 10), to: L.intro.e, target: L.intro.e, src: 'learn' });
-  else if (!v.ep.movie && d > 180) segs.push({ kind: 'intro', from: 0, to: Math.min(INTRO_WINDOW, d * 0.3), target: null, osd: true, src: 'auto' });
+  else if (!v.ep.movie && L.intro) segs.push({ kind: 'intro', from: Math.max(0, L.intro.s - 10), to: L.intro.e, target: Math.max(L.intro.s, L.intro.e - LEARN_MARGIN), src: 'learn' });
+  else if (!v.ep.movie && d > 180) segs.push({ kind: 'intro', from: 0, to: Math.min(INTRO_WINDOW, d * 0.3), target: null, src: 'auto' });
   if (db && db.credits) {
     const post = db.credits.e && db.credits.e < d - 10;   // Szene nach dem Abspann
     segs.push({ kind: 'outro', from: db.credits.s, to: post ? db.credits.e : d, target: post ? db.credits.e : null, src: 'db' });
@@ -1787,18 +1789,32 @@ function showSkip(seg) {
   const b = $('#pSkip');
   skipSeg = seg; skipKind = seg.kind; skipShownAt = Date.now();
   const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length && seg.target == null;
-  b.innerHTML = seg.kind === 'intro' ? (seg.osd ? 'Intro überspringen <span>⏩</span>' : 'Intro überspringen <span>⏭</span>')
+  b.innerHTML = seg.kind === 'intro' ? (seg.src === 'auto' ? 'Intro überspringen <span>⏩</span>' : 'Intro überspringen <span>⏭</span>')
     : seg.kind === 'recap' ? 'Rückblick überspringen <span>⏭</span>'
-    : next ? 'Nächste Folge <span>▶</span>' : 'Abspann überspringen <span>⏭</span>';
+    : next ? nextLabel(AUTO_NEXT) : 'Abspann überspringen <span>⏭</span>';
   b.dataset.src = seg.src;
   b.classList.remove('hidden');
   if (vod && VC.zone !== 'btns' && !SC.on) VC.zone = 'skip';
   if (vod) renderVosd();
   clearTimeout(skipTimer);
   if (seg.timeout) skipTimer = setTimeout(() => { if (vod) vod.used[seg.kind] = true; hideSkip(); }, seg.timeout);
+  clearInterval(autoTimer);
+  if (next) startAutoNext(seg);
+}
+const nextLabel = n => `Nächste Folge in ${n} s <span>▶</span>`;
+/** Auto-Play: „Nächste Folge“ nach AUTO_NEXT Sekunden selbst auslösen (pausiert mit dem Video). */
+function startAutoNext(seg) {
+  autoLeft = AUTO_NEXT;
+  autoTimer = setInterval(() => {
+    if (!vod || skipSeg !== seg) { clearInterval(autoTimer); return; }
+    if (video.paused || menuOpen || SC.on) return;
+    autoLeft--;
+    if (autoLeft <= 0) { clearInterval(autoTimer); dbg('auto-next'); doSkip(); }
+    else $('#pSkip').innerHTML = nextLabel(autoLeft);
+  }, 1000);
 }
 function hideSkip() {
-  clearTimeout(skipTimer);
+  clearTimeout(skipTimer); clearInterval(autoTimer);
   skipKind = null; skipSeg = null;
   $('#pSkip').classList.add('hidden');
   if (typeof VC !== 'undefined' && VC.zone === 'skip') { VC.zone = 'bar'; if (vod) renderVosd(); }
@@ -1806,8 +1822,7 @@ function hideSkip() {
 function checkSkip() {
   if (!vod || menuOpen || !vod.segReady) return;
   const t = video.currentTime || 0;
-  const osdOn = vod.touched && osdShown() && !video.paused;
-  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind] && (!s.osd || osdOn)).sort((a, b) => b.from - a.from)[0] || null;
+  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind]).sort((a, b) => b.from - a.from)[0] || null;
   if (cur && skipSeg !== cur) showSkip(cur);
   else if (!cur && skipSeg) hideSkip();
 }
@@ -2167,8 +2182,8 @@ function playerKey(e) {
   if (menuOpen) return menuKey(e);
   if (clistOpen) return clistKey(e);
   if (!vod && currentId && k === 'ArrowLeft') { e.preventDefault(); openClist(); return; }
-  // Faustregel-Intro (Zeitpunkt unbekannt): ⏩ überspringt, OK bleibt Pause
-  if (skipSeg && skipSeg.osd && k === 'MediaFastForward') { e.preventDefault(); doSkip(); return; }
+  // Faustregel-Intro (Zeitpunkt unbekannt): auch ⏩ überspringt
+  if (skipSeg && skipSeg.src === 'auto' && k === 'MediaFastForward') { e.preventDefault(); doSkip(); return; }
   if (skipKind && ['Enter', ' '].includes(k) && (!vod || VC.zone === 'skip')) { e.preventDefault(); doSkip(); return; }
   if (vod && k !== 'ContextMenu' && k !== 'm' && k !== 'M') {
     if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k) && !SC.on) { e.preventDefault(); closePlayer(); return; }
@@ -2184,7 +2199,7 @@ function playerKey(e) {
   else if (['f', 'F'].includes(k)) toggleFav(currentId);
   else return;
   e.preventDefault();
-  if (vod) vod.touched = true;   // Faustregel-Intro erst nach eigener Eingabe anbieten
+  if (vod) vod.touched = true;
   showOsd();
 }
 video.addEventListener('pause', () => checkSkip());
