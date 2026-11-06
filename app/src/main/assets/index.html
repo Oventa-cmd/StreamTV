@@ -270,13 +270,13 @@
         <div class="osd-prog" id="eProg"><div class="bar"><i id="eBar"></i></div><span id="eLeft"></span></div>
         <div class="epg-row next" id="eNextRow"><span class="epg-lbl">Danach</span><span class="epg-tm" id="eNextT"></span><span id="eNext"></span></div>
       </div>
-      <div class="osd-sub" id="pSub">◀ Senderliste · ▲▼ Sender · OK Pause · ≡ Optionen · Zurück</div>
+      <div class="osd-sub" id="pSub">◀▶ Leiste · OK auswählen · ▲▼ Sender · Zurück</div>
     </div>
-    <div class="osd-btns">
-      <button class="btn" onclick="zap(-1)">▲</button>
-      <button class="btn" onclick="zap(1)">▼</button>
-      <button class="btn" id="pFav" onclick="toggleFav(currentId)">☆</button>
-      <button class="btn primary" onclick="closePlayer()">✕</button>
+    <div class="osd-btns" id="osdBtns">
+      <button class="btn" data-osd="list" onclick="openClist()">☰ Sender</button>
+      <button class="btn" id="pFav" data-osd="fav" onclick="toggleFav(currentId)">☆</button>
+      <button class="btn" data-osd="menu" onclick="openMenu()">≡ Optionen</button>
+      <button class="btn primary" data-osd="close" onclick="closePlayer()">✕</button>
     </div>
   </div>
   <!-- Serien & Filme: Steuerung im Netflix-Aufbau -->

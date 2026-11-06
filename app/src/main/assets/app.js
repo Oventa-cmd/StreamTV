@@ -90,7 +90,7 @@ function toggleFav(id) {
   if (!id) return;
   state.favs = isFav(id) ? state.favs.filter(x => x !== id) : [...state.favs, id];
   refresh();
-  if (playerOpen) $('#pFav').textContent = isFav(currentId) ? '★' : '☆';
+  if (playerOpen) $('#pFav').textContent = isFav(currentId) ? '★ Favorit' : '☆ Favorit';
   toast(isFav(id) ? '★ Zu Favoriten hinzugefügt' : 'Aus Favoriten entfernt');
 }
 
@@ -1521,6 +1521,105 @@ async function openDeep(uri) {
 }
 window.openDeep = openDeep;
 
+/* ================= Kontextmenü (OK lang auf einer Kachel) ================= */
+const CTX = { open: false, el: null, items: [] };
+(() => {
+  const d = document.createElement('div');
+  d.id = 'ctx'; d.className = 'ctx hidden';
+  d.innerHTML = '<div class="ctx-box"><div class="ctx-head"><div class="ctx-title" id="ctxTitle"></div><div class="ctx-sub" id="ctxSub"></div></div><div class="ctx-list" id="ctxList"></div></div>';
+  document.body.appendChild(d);
+  d.addEventListener('click', e => {
+    const b = e.target.closest('[data-ctx]');
+    if (b) { e.stopPropagation(); runCtx(Number(b.dataset.ctx)); return; }
+    if (e.target === d) closeCtx();
+  });
+})();
+function ctxItemsFor(el) {
+  const items = [];
+  if (el.dataset.card) {
+    const c = byId(el.dataset.card);
+    if (!c) return null;
+    const fav = isFav(c.id);
+    items.push({ t: '▶ Abspielen', f: () => openPlayer(c.id) });
+    items.push({ t: fav ? '★ Aus Favoriten entfernen' : '☆ Zu Favoriten hinzufügen', f: () => { toggleFav(c.id); toast(fav ? `„${c.name}“ aus Favoriten entfernt` : `„${c.name}“ zu Favoriten hinzugefügt`); } });
+    let ext = false; try { ext = !!(bridge && bridge.hasExternalPlayer && bridge.hasExternalPlayer()); } catch (e) {}
+    if (ext) items.push({ t: '↗ In anderem Player öffnen', f: () => { try { bridge.openExternal(c.url, c.name, 0); } catch (e) {} } });
+    if (c.group) items.push({ t: `⊘ Kategorie „${c.group}“ ausblenden`, f: () => {
+      setHidden('live', [...(state.settings.hideLive || []), c.group]);
+      toast(`Kategorie „${c.group}“ ausgeblendet – zurückholen unter Einstellungen → Kategorien`);
+    } });
+    return { title: c.name, sub: c.group || '', items };
+  }
+  if (el.dataset.show) {
+    const key = el.dataset.show, p = TM.find(key);
+    if (!p) return null;
+    items.push({ t: 'ⓘ Details', f: () => openSheet(key) });
+    items.push({ t: '▶ Beim Anbieter abspielen', f: () => openSheet(key).then(() => { if (sheetOpen && !ip) openIptv(key); }) });
+    if (WL.connected) {
+      const on = !!WL.item(p.type, p.id);
+      items.push({ t: on ? '✓ Von der Watchlist entfernen' : '+ Auf die Watchlist', f: async () => {
+        try {
+          if (on) { await WL.remove(p.type, p.id); toast(`„${p.title}“ von der Watchlist entfernt`); }
+          else { await WL.addPlanned(p.type, TM.details_[key] || await TM.details(p.type, p.id)); toast(`„${p.title}“ steht jetzt auf deiner Watchlist`); }
+          renderRecs();
+        } catch (e) { toast('Watchlist: ' + e.message); }
+      } });
+    }
+    return { title: p.title, sub: p.type === 'movie' ? 'Film' : 'Serie', items };
+  }
+  if (el.dataset.ser) {
+    const [k, n] = el.dataset.ser.split(':');
+    const cap = el.querySelector('.caption'), sub = el.querySelector('.sub');
+    items.push({ t: '▶ Öffnen', f: () => openCatalogItem(k, Number(n)) });
+    const cat = sub && sub.textContent.split(' · ').pop();
+    const all = CAT[k] && CAT[k].cats || [];
+    if (cat && all.includes(cat)) items.push({ t: `⊘ Kategorie „${cat}“ ausblenden`, f: () => {
+      setHidden(k, [...(state.settings[hideKey(k)] || []), cat]);
+      toast(`Kategorie „${cat}“ ausgeblendet – zurückholen unter Einstellungen → Kategorien`);
+    } });
+    return { title: cap ? cap.textContent : '', sub: sub ? sub.textContent : '', items };
+  }
+  return null;
+}
+function openCtx(el) {
+  const m = el && ctxItemsFor(el);
+  if (!m || !m.items.length) return;
+  CTX.open = true; CTX.el = el; CTX.items = m.items;
+  $('#ctxTitle').textContent = m.title;
+  $('#ctxSub').textContent = m.sub;
+  $('#ctxList').innerHTML = m.items.map((it, i) => `<button class="ctx-btn" data-ctx="${i}" type="button">${esc(it.t)}</button>`).join('')
+    + `<button class="ctx-btn cancel" data-ctx="-1" type="button">Abbrechen</button>`;
+  $('#ctx').classList.remove('hidden');
+  pushOverlay('ctx');
+  $('#ctxList .ctx-btn').focus({ preventScroll: true });
+}
+function closeCtx(fromPop) {
+  if (!CTX.open) return;
+  CTX.open = false;
+  $('#ctx').classList.add('hidden');
+  if (!fromPop) popOverlay('ctx');
+  const el = CTX.el;
+  if (el && el.isConnected) el.focus({ preventScroll: true });
+  else if (el && el.dataset.card) { const t = $(`[data-card="${CSS.escape(el.dataset.card)}"]`); if (t) t.focus({ preventScroll: true }); }
+}
+function runCtx(i) {
+  const it = CTX.items[i];
+  closeCtx();
+  if (it) setTimeout(() => it.f(), 0);
+}
+document.addEventListener('keydown', e => {
+  if (!CTX.open) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const btns = $$('#ctxList .ctx-btn'), i = btns.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const n = btns[(Math.max(0, i) + (e.key === 'ArrowDown' ? 1 : btns.length - 1)) % btns.length];
+    if (n) n.focus({ preventScroll: true });
+  } else if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
+    const b = btns[Math.max(0, i)];
+    if (b) { const k = Number(b.dataset.ctx); k < 0 ? closeCtx() : runCtx(k); }
+  } else if (['Escape', 'Backspace', 'GoBack', 'BrowserBack', 'ArrowLeft'].includes(e.key)) closeCtx();
+}, true);
+
 /* ================= Overlays & Zurück-Taste ================= */
 const overlays = [];
 let skipPops = 0;
@@ -1536,6 +1635,7 @@ window.addEventListener('popstate', () => {
   if (top === 'saver') closeSaver(true);
   else if (top === 'remind') hideReminder(true);
   else if (top === 'pmenu') closeMenu(true);
+  else if (top === 'ctx') closeCtx(true);
   else if (top === 'clist') closeClist(true);
   else if (top === 'player') closePlayer(true);
   else if (top === 'iptv') closeIptv(true);
@@ -1786,9 +1886,35 @@ function showOsd() {
   osdTimer = setTimeout(hideOsdSoon, 4500);
   checkSkip();
 }
+/* Live-Leiste unten: ◀▶ wandert durch die Knöpfe, solange sie sichtbar ist.
+   Ist sie ausgeblendet, öffnet ◀ wie gewohnt direkt die Senderliste, ▶ blendet die Leiste ein. */
+let osdSel = -1;
+function osdBtns() { return $$('#osdBtns [data-osd]'); }
+function markOsd() { osdBtns().forEach((b, i) => b.classList.toggle('kf', i === osdSel)); }
+function liveOsdKey(e) {
+  const k = e.key, shown = osdShown();
+  if (k !== 'ArrowLeft' && k !== 'ArrowRight' && !(osdSel >= 0 && ['Enter', ' '].includes(k))) return false;
+  e.preventDefault();
+  if (k === 'Enter' || k === ' ') {
+    const b = osdBtns()[osdSel];
+    if (b) b.click();
+    if (playerOpen && !clistOpen && !menuOpen) showOsd();
+    return true;
+  }
+  const n = osdBtns().length;
+  if (!shown) {
+    if (k === 'ArrowLeft') { openClist(); return true; }
+    osdSel = 1; markOsd(); showOsd(); return true;   // ▶: Leiste mit „Favorit“ vorausgewählt
+  }
+  if (osdSel < 0) osdSel = 1;
+  else osdSel = Math.max(0, Math.min(n - 1, osdSel + (k === 'ArrowRight' ? 1 : -1)));
+  markOsd(); showOsd();
+  return true;
+}
 /** Ausblenden – nicht beim Spulen und (wie bei Netflix) nicht im Pause-Zustand. */
 function hideOsdSoon() {
   clearTimeout(osdTimer);
+  if (!vod) { osdSel = -1; markOsd(); }
   if (vod && (SC.on || video.paused)) { osdTimer = setTimeout(hideOsdSoon, 4500); return; }
   osdEl().classList.add('hide');
   if (vod) { VC.zone = skipKind ? 'skip' : 'bar'; renderVosd(); }
@@ -1808,7 +1934,7 @@ function openPlayer(id) {
   persist();
   $('#pTitle').textContent = ch.name;
   $('#pGroup').textContent = ch.group;
-  $('#pFav').textContent = isFav(id) ? '★' : '☆';
+  $('#pFav').textContent = isFav(id) ? '★ Favorit' : '☆ Favorit';
   $('#pLogo').innerHTML = ch.logo ? `<img src="${esc(ch.logo)}" alt="" onerror="this.remove()">` : esc(initials(ch.name));
   EPG.want(ch, true);
   renderOsdEpg();
@@ -1836,7 +1962,7 @@ function setVod(v) {
   if (v) $('#pEpg').classList.add('hidden');
   $('#pFav').classList.toggle('hidden', !!v);
   $('#pSub').textContent = v ? '' 
-    : '◀ Senderliste · ▲▼ Sender · OK Pause · ≡ Optionen · Zurück';
+    : '◀▶ Leiste · OK auswählen · ▲▼ Sender · Zurück';
 }
 /** ctx = Herkunft für „Weiterschauen“: { acc, sid, img, src } */
 function openVod(list, idx, show, ctx) {
@@ -2150,14 +2276,18 @@ document.addEventListener('keyup', e => {
   const id = HOLD.id, done = HOLD.done;
   HOLD.id = null;
   if (done) return;
-  if (HOLD.kind === 'resume') openResumeSheet(id); else openSheet(id);
+  if (HOLD.kind === 'resume') openResumeSheet(id);
+  else if (HOLD.kind === 'ctx') { if (HOLD.el && HOLD.el.isConnected) HOLD.el.click(); }
+  else openSheet(id);
 });
 function holdStart(a, kind, id) {
   HOLD.id = id; HOLD.kind = kind; HOLD.el = a; HOLD.done = false;
   HOLD.timer = setTimeout(() => {
     if (!HOLD.id) return;
     HOLD.done = true;
-    if (kind === 'resume') hideResume(HOLD.id); else startMove(HOLD.el);
+    if (kind === 'resume') hideResume(HOLD.id);
+    else if (kind === 'ctx') openCtx(HOLD.el);
+    else startMove(HOLD.el);
   }, 650);
 }
 function hideResume(id) {
@@ -2382,7 +2512,7 @@ function playerKey(e) {
   dbg('key', k, e.repeat ? 'rep' : '', 'zone', typeof VC !== 'undefined' ? VC.zone : '', 'skip', skipKind || '-', 'osd', osdShown());
   if (menuOpen) return menuKey(e);
   if (clistOpen) return clistKey(e);
-  if (!vod && currentId && k === 'ArrowLeft') { e.preventDefault(); openClist(); return; }
+  if (!vod && currentId && liveOsdKey(e)) return;
   // Faustregel-Intro (Zeitpunkt unbekannt): auch ⏩ überspringt
   if (skipSeg && skipSeg.src === 'auto' && k === 'MediaFastForward') { e.preventDefault(); doSkip(); return; }
   if (skipKind && ['Enter', ' '].includes(k) && (!vod || VC.zone === 'skip')) { e.preventDefault(); doSkip(); return; }
@@ -2431,6 +2561,7 @@ function openClist() {
   cl.ids = state.channels.filter(c => c.group === ch.group).map(c => c.id);   // aktuelle Kategorie, auch wenn ausgeblendet
   cl.sel = Math.max(0, cl.ids.indexOf(currentId));
   clistOpen = true;
+  osdSel = -1; markOsd();
   pushOverlay('clist');
   $('#osd').classList.add('hide');
   $('#pList').classList.remove('hidden');
@@ -2806,7 +2937,14 @@ document.addEventListener('keydown', e => {
     holdStart(a, a.dataset.resume ? 'resume' : 'wl', a.dataset.resume || a.dataset.show);
     return;
   }
-  if (e.key === 'Enter' && a && a.classList.contains('tile')) { e.preventDefault(); a.click(); return; }
+  if (e.key === 'Enter' && a && a.classList.contains('tile')) {
+    e.preventDefault();
+    if (e.repeat || HOLD.id) return;
+    // OK kurz = öffnen, OK lang = Kontextmenü
+    if (a.dataset.card || a.dataset.show || a.dataset.ser) holdStart(a, 'ctx', a.dataset.card || a.dataset.show || a.dataset.ser);
+    else a.click();
+    return;
+  }
   if ((e.key === 'f' || e.key === 'ContextMenu') && a && a.dataset.card) { e.preventDefault(); toggleFav(a.dataset.card); }
   if (e.key === 'ContextMenu' && a && a.dataset.resume) { e.preventDefault(); hideResume(a.dataset.resume); }
   if (e.key === 'ContextMenu' && a && a.dataset.ev) { e.preventDefault(); toggleRemind(a.dataset.ev); }

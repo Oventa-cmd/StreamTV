@@ -752,3 +752,21 @@ header.scrolled{background:rgba(var(--bgr),.72)}
 input[data-locked]{caret-color:transparent;cursor:pointer}
 input[data-locked]:focus::placeholder{color:rgba(255,255,255,.75)}
 .field.editing:focus{box-shadow:0 0 0 3px #0a84ff}
+/* Live-Leiste: per Fernbedienung ausgewählter Knopf */
+#osd .osd-btns .btn.kf{box-shadow:0 0 0 3px #fff;transform:scale(1.06);background:rgba(255,255,255,.28)}
+#osd .osd-btns .btn.primary.kf{background:#fff;color:#000}
+/* Kontextmenü (OK lang auf einer Kachel) */
+.ctx{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);animation:ctxIn .18s ease-out}
+.ctx.hidden{display:none}
+.ctx-box{min-width:22rem;max-width:32rem;background:rgba(40,40,46,.96);border-radius:1.1rem;padding:1.2rem;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+body:not(.lite) .ctx-box{backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);background:rgba(40,40,46,.82)}
+.ctx-head{padding:.2rem .6rem .9rem;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:.6rem}
+.ctx-title{font-size:1.25rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctx-sub{color:rgba(255,255,255,.55);font-size:.85rem;margin-top:.2rem}
+.ctx-sub:empty{display:none}
+.ctx-list{display:flex;flex-direction:column;gap:.25rem}
+.ctx-btn{text-align:left;padding:.8rem 1rem;border-radius:.7rem;font-size:1rem;color:#fff;transition:background .15s,transform .15s}
+.ctx-btn:focus{outline:0;background:#fff;color:#000;transform:scale(1.02)}
+.ctx-btn.cancel{color:rgba(255,255,255,.6);margin-top:.3rem}
+.ctx-btn.cancel:focus{color:#000}
+@keyframes ctxIn{from{opacity:0}to{opacity:1}}
