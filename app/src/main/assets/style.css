@@ -744,3 +744,7 @@ header.scrolled{background:rgba(var(--bgr),.72)}
 .upd-bar{max-width:24rem}
 .wl-tag{display:inline-block;margin-left:.6rem;padding:.12rem .55rem;border-radius:999px;background:rgba(48,209,88,.18);color:#7ee29a;font-size:.72rem;letter-spacing:0;text-transform:none;font-weight:700;vertical-align:middle}
 .reason .wl-tag:first-child{margin-left:0}
+
+/* Watchlist-Button: schon drauf (zum Entfernen anklickbar) */
+.btn.on{color:#7ee2a8}
+.btn.on:focus{color:#0a7a3e}

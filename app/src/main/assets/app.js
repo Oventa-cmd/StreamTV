@@ -327,12 +327,17 @@ function availList(id, type) {
   if (mode === 'wait') return null;
   return raw.filter(p => XS.has(p));
 }
-function recRowHTML(t, moreView) {
+function recRowHTML(t, moreView, used) {
   const raw = TM.list(t.id);
-  if (!raw.length && (TM.loading.has(t.id) || !TM.cache[t.id])) return railHTML(t.label, skeletons(5));
-  const list = availList(t.id, t.type);
-  if (!list) return railHTML(t.label, skeletons(5));
-  const items = (t.rank ? list.slice(0, 10) : list).map(p => showTileHTML(p, t.rank ? raw.indexOf(p) + 1 : 0));
+  if (!raw.length && (TM.loading.has(t.id) || !TM.cache[t.id])) return t.genre ? '' : railHTML(t.label, skeletons(5));
+  let list = availList(t.id, t.type);
+  if (!list) return t.genre ? '' : railHTML(t.label, skeletons(5));
+  // Genre-Reihen: nichts zeigen, was weiter oben schon steht → mehr Abwechslung
+  if (used && t.genre) list = list.filter(p => !used.has(p.type + ':' + p.id));
+  list = t.rank ? list.slice(0, 10) : list.slice(0, RAIL_MAX);
+  if (t.genre && list.length < 4) return '';
+  if (used) for (const p of list) used.add(p.type + ':' + p.id);
+  const items = list.map(p => showTileHTML(p, t.rank ? raw.indexOf(p) + 1 : 0));
   if (!items.length) return '';
   const more = moreView ? `<div class="tile show more focusable" tabindex="0" data-view="${moreView}"><div class="art"><span>Alle ${moreView === 'movies' ? 'Filme' : 'Serien'} →</span></div><div class="caption">&nbsp;</div></div>` : '';
   return railHTML(t.label, items.join('') + more);
@@ -404,8 +409,14 @@ function renderRecs() {
     }
     const tabs = TM.tabs();
     $('#homeRecs').innerHTML = wlRowHTML() + tabs.filter(t => ['forYou', 'top', 'mTop'].includes(t.id)).map(t => recRowHTML(t, t.type === 'movie' ? 'movies' : 'series')).join('');
-    $('#serRecs').innerHTML = wlRowHTML('tv') + tabs.filter(t => t.type !== 'movie').map(t => recRowHTML(t)).join('');
-    $('#movRecs').innerHTML = wlRowHTML('movie') + tabs.filter(t => t.type === 'movie').map(t => recRowHTML(t)).join('');
+    const view = type => {
+      const used = new Set(), own = tabs.filter(t => (t.type === 'movie') === (type === 'movie'));
+      const top = own.filter(t => !t.genre).map(t => recRowHTML(t, null, used)).join('');
+      const gen = own.filter(t => t.genre).map(t => recRowHTML(t, null, used)).join('');
+      return wlRowHTML(type) + top + (gen ? `<div class="section-label cat-label">Nach Genre</div>` + gen : '');
+    };
+    $('#serRecs').innerHTML = view('tv');
+    $('#movRecs').innerHTML = view('movie');
   });
 }
 
@@ -654,11 +665,20 @@ async function loadDiscover(force) {
   } catch (e) {}
   if (!TM.key()) { renderRecs(); renderHero(); return; }
   renderRecs();
-  await Promise.all(TM.tabs().map(t => TM.ensure(t, force).catch(() => {}).then(() => {
-    renderRecs();
+  const tabs = TM.tabs();
+  await Promise.all(tabs.filter(t => !t.genre).map(t => TM.ensure(t, force).catch(() => {}).then(() => {
+    renderRecsSoon();
     if (t.id === 'top' || t.id === 'mTop') setupHero();
   })));
+  // Genre-Reihen in kleinen Paketen (schont Fernseher und TMDB)
+  const gen = tabs.filter(t => t.genre);
+  for (let i = 0; i < gen.length; i += 4) {
+    await Promise.all(gen.slice(i, i + 4).map(t => TM.ensure(t, force).catch(() => {})));
+    renderRecsSoon();
+  }
 }
+let recsTimer = null;
+function renderRecsSoon() { clearTimeout(recsTimer); recsTimer = setTimeout(renderRecs, 250); }
 
 /* ================= Detailansicht (Serie) ================= */
 async function openSheet(key) {
@@ -692,20 +712,26 @@ function renderSheet(p, d) {
     ${prov.length ? `<div class="prov">${prov.map(n => `<span>${esc(n)}</span>`).join('')}</div>` : ''}
     <div class="btn-row">
       <button class="btn primary focusable" id="shIptv" data-iptv="${key}">▶ Beim Anbieter suchen</button>
-      ${WL.connected && !onList ? `<button class="btn focusable" id="shAdd">+ Auf die Watchlist</button>` : ''}
+      ${WL.connected ? `<button class="btn focusable ${onList ? 'on' : ''}" id="shAdd">${onList ? '✓ Watchlist' : '+ Auf die Watchlist'}</button>` : ''}
       <button class="btn focusable" id="shLive" data-livesearch="${esc(p.title)}">Suchen</button>
       <button class="btn focusable" id="shClose">Schließen</button>
     </div>`;
   const add = $('#shAdd');
-  if (add && !onList) add.onclick = async () => {
-    add.disabled = true; add.textContent = 'Speichere …';
+  if (add) add.onclick = async () => {
+    if (add.dataset.busy) return;
+    if (onList && !add.dataset.ask) {   // erst nachfragen, dann entfernen
+      add.dataset.ask = '1'; add.textContent = 'Wirklich entfernen? OK';
+      setTimeout(() => { if (add.isConnected && add.dataset.ask && !add.dataset.busy) { delete add.dataset.ask; add.textContent = '✓ Watchlist'; } }, 4000);
+      return;
+    }
+    add.dataset.busy = '1'; add.textContent = onList ? 'Entferne …' : 'Speichere …';
     try {
       const det = d || await TM.details(p.type, p.id);
-      await WL.addPlanned(p.type, det);
-      toast(`„${p.title}“ steht jetzt auf deiner Watchlist`);
-      renderSheet(p, det); renderRecs();
-      $('#shLive').focus();
-    } catch (e) { toast(e.message); add.disabled = false; add.textContent = '+ Auf die Watchlist'; }
+      if (onList) { await WL.remove(p.type, p.id); toast(`„${p.title}“ von der Watchlist entfernt`); }
+      else { await WL.addPlanned(p.type, det); toast(`„${p.title}“ steht jetzt auf deiner Watchlist`); }
+      if (sheetOpen && !ip) { renderSheet(p, det); const b = $('#shAdd'); if (b) b.focus({ preventScroll: true }); }
+      renderRecs();
+    } catch (e) { toast(e.message); delete add.dataset.busy; delete add.dataset.ask; add.textContent = onList ? '✓ Watchlist' : '+ Auf die Watchlist'; }
   };
   $('#shClose').onclick = () => closeSheet();
   const target = (focusedId && $('#' + focusedId)) || $('#sheet .btn:not(:disabled)');
@@ -873,7 +899,8 @@ function renderIptv(focusResume) {
   if (ip.status === 'show' && WL.connected) {
     const o = p.id > 0 ? WL.item(p.type, p.id) : null;
     if (o) wlTag = `<span class="wl-tag">✓ ${o.status === 'watching' ? 'Am Schauen' : o.status === 'done' ? 'Gesehen' : o.status === 'dropped' ? 'Abgebrochen' : 'Auf deiner Watchlist'}</span>`;
-    else btns.push(`<button class="btn focusable" data-ipk="wl" data-ip="wl">${ip.wlBusy ? 'Speichere …' : '+ Watchlist'}</button>`);
+    const lbl = ip.wlBusy ? (o ? 'Entferne …' : 'Speichere …') : o ? (ip.wlAsk ? 'Wirklich entfernen? OK' : '✓ Watchlist') : '+ Watchlist';
+    btns.push(`<button class="btn focusable ${o ? 'on' : ''}" data-ipk="wl" data-ip="wl">${lbl}</button>`);
   }
   if (ip.sel && ip.hits.length > 1) btns.push(`<button class="btn focusable" data-ipk="hits" data-ip="hits">Andere Treffer (${ip.hits.length})</button>`);
   if (['error', 'empty'].includes(ip.status)) btns.push(`<button class="btn focusable" data-ipk="retry" data-ip="retry">Erneut versuchen</button>`,
@@ -916,6 +943,19 @@ function renderIptv(focusResume) {
 async function ipWatchlist() {
   if (!ip || ip.wlBusy) return;
   const cur = ip, p = ip.p;
+  if (p.id > 0 && WL.item(p.type, p.id)) {   // schon drauf → nach Rückfrage entfernen
+    if (!cur.wlAsk) {
+      cur.wlAsk = true; renderIptv();
+      setTimeout(() => { if (cur.wlAsk && !cur.wlBusy) { cur.wlAsk = false; if (ip === cur) renderIptv(); } }, 4000);
+      return;
+    }
+    cur.wlAsk = false; cur.wlBusy = true; renderIptv();
+    try { await WL.remove(p.type, p.id); toast(`„${p.title}“ von der Watchlist entfernt`); renderRecs(); }
+    catch (e) { toast('Watchlist: ' + e.message); }
+    cur.wlBusy = false;
+    if (ip === cur) renderIptv();
+    return;
+  }
   cur.wlBusy = true; renderIptv();
   try {
     if (!(p.id > 0)) {
@@ -930,7 +970,7 @@ async function ipWatchlist() {
     renderRecs();
   } catch (e) { toast('Watchlist: ' + e.message); }
   cur.wlBusy = false;
-  if (ip === cur) { renderIptv(); const b = $('#sheet [data-ipk="play"]'); if (b && !$('#sheet [data-ipk="wl"]')) b.focus({ preventScroll: true }); }
+  if (ip === cur) renderIptv();
 }
 function closeIptv(fromPop) {
   if (!ip) return;

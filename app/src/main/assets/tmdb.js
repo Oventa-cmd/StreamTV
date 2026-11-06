@@ -120,6 +120,16 @@ const WL = {
     await this.refreshItems(true);
   },
 
+  /** Titel aus der Watchlist entfernen – egal ob geplant, am Schauen, gesehen oder abgebrochen. */
+  async remove(type, id) {
+    if (!await this.ensureToken()) throw new Error('Bitte neu anmelden');
+    const r = await this.http('DELETE', `/rest/v1/items?media_type=eq.${encodeURIComponent(type)}&tmdb_id=eq.${Number(id)}`);
+    if (r.status < 200 || r.status > 299) throw new Error('Entfernen fehlgeschlagen (' + r.status + ')');
+    this.s.items = (this.s.items || []).filter(o => !(o.media_type === type && Number(o.tmdb_id) === Number(id)));
+    this.save();
+    await this.refreshItems(true).catch(() => {});
+  },
+
   /** Reihenfolge der geplanten Titel speichern (gleiches Feld wie in der Watchlist-App). list: [{ type, id, position }] */
   async setPositions(list) {
     if (!list.length || !this.connected || !await this.ensureToken()) return;
@@ -261,10 +271,75 @@ const TM = {
       movieSeeds ? { id: 'mForYou', label: 'Filme für dich', type: 'movie' } : null,
       { id: 'mTop', label: 'Top 10 Filme diese Woche', rank: true, type: 'movie' },
       { id: 'mNew', label: 'Neue Filme bei Netflix & Prime', type: 'movie' },
-      { id: 'mBest', label: 'Bestbewertete Filme', type: 'movie' }
-    ].filter(Boolean).map(t => Object.assign({ type: 'tv' }, t));
+      { id: 'mBest', label: 'Bestbewertete Filme', type: 'movie' },
+      { id: 'mHidden', label: 'Unentdeckte Filmperlen', type: 'movie' }
+    ].filter(Boolean).concat(this.genreTabs()).map(t => Object.assign({ type: 'tv' }, t));
   },
   seedSig() { return WL.seeds().map(s => `${s.type}:${s.id}:${s.weight}`).join('|'); },
+
+  /* ---------- Genre-Reihen wie bei Netflix (wechseln täglich) ---------- */
+  GENRES: {
+    tv: [
+      ['Komödie', { with_genres: '35' }], ['Action & Abenteuer', { with_genres: '10759' }], ['Krimi', { with_genres: '80' }],
+      ['Horror & Grusel', { kw: 'horror' }], ['Sci-Fi & Fantasy', { with_genres: '10765' }], ['Mystery', { with_genres: '9648' }],
+      ['Drama', { with_genres: '18' }], ['Miniserien', { with_type: '2' }], ['Anime', { with_genres: '16', with_original_language: 'ja' }],
+      ['Animation', { with_genres: '16', without_genres: '10762' }], ['Deutsche Serien', { with_original_language: 'de' }],
+      ['Dokuserien', { with_genres: '99' }], ['Reality-TV', { with_genres: '10764' }], ['Krieg & Politik', { with_genres: '10768' }],
+      ['Western', { with_genres: '37' }]
+    ],
+    movie: [
+      ['Komödie', { with_genres: '35' }], ['Action', { with_genres: '28' }], ['Horror', { with_genres: '27' }], ['Thriller', { with_genres: '53' }],
+      ['Krimi', { with_genres: '80' }], ['Science-Fiction', { with_genres: '878' }], ['Drama', { with_genres: '18' }],
+      ['Romantik', { with_genres: '10749' }], ['Fantasy', { with_genres: '14' }], ['Abenteuer', { with_genres: '12' }],
+      ['Animation', { with_genres: '16' }], ['Familie', { with_genres: '10751' }], ['Deutsche Filme', { with_original_language: 'de' }],
+      ['Kriegsfilme', { with_genres: '10752' }], ['Dokumentarfilme', { with_genres: '99' }], ['Kultklassiker', { classic: 1 }]
+    ]
+  },
+  genreTabs() {
+    const out = [];
+    for (const type of ['tv', 'movie']) this.GENRES[type].forEach(([label, q], i) =>
+      out.push({ id: (type === 'tv' ? 'g' : 'mg') + i, label, type, genre: q }));
+    return out;
+  },
+  /** Tageszahl → wechselt jeden Tag, sodass die Reihen andere Titel zeigen. */
+  day() { return Math.floor((Date.now() + 36e5) / 864e5); },
+  rng(str) {
+    let h = 2166136261;
+    for (const c of str + ':' + this.day()) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
+    return () => { h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; };
+  },
+  shuffle(list, rnd) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  },
+  /** n verschiedene Seiten aus 1..max (Seite 1 meist dabei = die bekanntesten Titel). */
+  pages(rnd, n, max) {
+    const set = new Set(rnd() < 0.6 ? [1] : []);
+    while (set.size < n) set.add(1 + Math.floor(rnd() * max));
+    return [...set];
+  },
+  kw: {},
+  async keyword(q) {
+    if (this.kw[q]) return this.kw[q];
+    const j = await this.get('/search/keyword', { query: q });
+    const hit = (j.results || []).find(k => k.name.toLowerCase() === q) || (j.results || [])[0];
+    return (this.kw[q] = hit ? String(hit.id) : '');
+  },
+  async loadGenre(tab) {
+    const rnd = this.rng(tab.id), tv = tab.type === 'tv', g = Object.assign({}, tab.genre);
+    if (g.kw) { const id = await this.keyword(g.kw); if (!id) return []; g.with_keywords = id; delete g.kw; }
+    const base = { include_adult: 'false', 'vote_count.gte': tv ? '60' : '150', 'vote_average.gte': '6.3' };
+    if (g.classic) { delete g.classic; base['primary_release_date.lte'] = '1999-12-31'; base['vote_count.gte'] = '800'; base['vote_average.gte'] = '7.2'; }
+    if (g.with_original_language) base['vote_count.gte'] = tv ? '20' : '50';
+    // populär (wechselnde Seiten) + ein Schwung Hochbewertetes
+    const qs = this.pages(rnd, 3, 10).map(page => Object.assign({}, base, g, { sort_by: 'popularity.desc', page: String(page) }));
+    qs.push(Object.assign({}, base, g, { sort_by: 'vote_average.desc', 'vote_count.gte': tv ? '250' : '800', page: String(1 + Math.floor(rnd() * 3)) }));
+    const res = await Promise.all(qs.map(q => this.get('/discover/' + tab.type, q).catch(() => null)));
+    const list = [].concat(...res.filter(Boolean).map(j => this.picks(j, tab.type)));
+    // Beschreibung nicht cachen (Speicher) – die Detailansicht lädt sie nach
+    return this.shuffle(list, rnd).map(p => Object.assign(p, { overview: '', orig: '' }));
+  },
 
   async loadTab(tab) {
     const today = new Date();
@@ -280,13 +355,18 @@ const TM = {
       list = this.picks(await this.get('/discover/tv', {
         watch_region: 'DE', with_watch_providers: '8|9', sort_by: 'popularity.desc', 'vote_count.gte': '15', 'first_air_date.gte': since
       }), 'tv');
+    } else if (tab.genre) {
+      list = await this.loadGenre(tab);
     } else if (tab.id === 'best') {
-      const [a, b] = await Promise.all([1, 2].map(p => this.get('/tv/top_rated', { page: String(p) })));
-      list = this.picks(a, 'tv').concat(this.picks(b, 'tv'));
+      const rnd = this.rng('best');
+      const res = await Promise.all(this.pages(rnd, 3, 12).map(p => this.get('/tv/top_rated', { page: String(p) })));
+      list = this.shuffle([].concat(...res.map(j => this.picks(j, 'tv'))), rnd);
     } else if (tab.id === 'hidden') {
-      list = this.picks(await this.get('/discover/tv', {
-        sort_by: 'vote_average.desc', 'vote_average.gte': '7.8', 'vote_count.gte': '150', 'vote_count.lte': '1500'
-      }), 'tv');
+      const rnd = this.rng('hidden');
+      const res = await Promise.all(this.pages(rnd, 2, 6).map(p => this.get('/discover/tv', {
+        sort_by: 'vote_average.desc', 'vote_average.gte': '7.6', 'vote_count.gte': '120', 'vote_count.lte': '1500', page: String(p)
+      })));
+      list = this.shuffle([].concat(...res.map(j => this.picks(j, 'tv'))), rnd);
     }
     else if (tab.id === 'mTop') {
       list = this.picks(await this.get('/trending/movie/week'), 'movie');
@@ -297,8 +377,15 @@ const TM = {
         watch_region: 'DE', with_watch_providers: '8|9', sort_by: 'popularity.desc', 'vote_count.gte': '20', 'primary_release_date.gte': since
       }), 'movie');
     } else if (tab.id === 'mBest') {
-      const [a, b] = await Promise.all([1, 2].map(p => this.get('/movie/top_rated', { page: String(p) })));
-      list = this.picks(a, 'movie').concat(this.picks(b, 'movie'));
+      const rnd = this.rng('mBest');
+      const res = await Promise.all(this.pages(rnd, 3, 15).map(p => this.get('/movie/top_rated', { page: String(p) })));
+      list = this.shuffle([].concat(...res.map(j => this.picks(j, 'movie'))), rnd);
+    } else if (tab.id === 'mHidden') {
+      const rnd = this.rng('mHidden');
+      const res = await Promise.all(this.pages(rnd, 2, 6).map(p => this.get('/discover/movie', {
+        sort_by: 'vote_average.desc', 'vote_average.gte': '7.3', 'vote_count.gte': '300', 'vote_count.lte': '3000', page: String(p)
+      })));
+      list = this.shuffle([].concat(...res.map(j => this.picks(j, 'movie'))), rnd);
     }
     const seen = new Set();
     return list.filter(p => (p.backdrop || p.poster) && !seen.has(p.type + ':' + p.id) && seen.add(p.type + ':' + p.id));
@@ -332,7 +419,8 @@ const TM = {
   },
 
   async ensure(tab, force) {
-    const sig = ['forYou', 'because', 'mForYou'].includes(tab.id) ? this.seedSig() : '';
+    const sig = ['forYou', 'because', 'mForYou'].includes(tab.id) ? this.seedSig()
+      : tab.genre || ['best', 'hidden', 'mBest', 'mHidden'].includes(tab.id) ? 'd' + this.day() : '';
     const c = this.cache[tab.id];
     if (!force && c && Date.now() - c.at < this.TTL && c.sig === sig) return;
     if (this.loading.has(tab.id)) return;
