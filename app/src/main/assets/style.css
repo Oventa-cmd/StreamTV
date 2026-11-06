@@ -748,3 +748,7 @@ header.scrolled{background:rgba(var(--bgr),.72)}
 /* Watchlist-Button: schon drauf (zum Entfernen anklickbar) */
 .btn.on{color:#7ee2a8}
 .btn.on:focus{color:#0a7a3e}
+/* Gesperrte Eingabefelder (Tastatur erst nach OK) */
+input[data-locked]{caret-color:transparent;cursor:pointer}
+input[data-locked]:focus::placeholder{color:rgba(255,255,255,.75)}
+.field.editing:focus{box-shadow:0 0 0 3px #0a84ff}

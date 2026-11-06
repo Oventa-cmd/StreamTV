@@ -148,6 +148,7 @@ class MainActivity : Activity() {
 
         // ---------- Nativer Player (Serien & Filme) ----------
         @JavascriptInterface fun nvPlay(url: String, startMs: Double, ua: String) = native.play(url, startMs.toLong(), ua)
+        @JavascriptInterface fun nvPlayLive(url: String, ua: String, buf: Int) = native.playLive(url, ua, buf)
         @JavascriptInterface fun nvPause() = native.pause()
         @JavascriptInterface fun nvResume() = native.resume()
         @JavascriptInterface fun nvSeek(ms: Double) = native.seek(ms.toLong())

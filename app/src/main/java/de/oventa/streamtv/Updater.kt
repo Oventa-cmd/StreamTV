@@ -84,6 +84,10 @@ object Updater {
         val pi = ctx.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         params.setAppPackageName(ctx.packageName)
+        // Ab Android 12: Updates ohne Bestätigungsdialog, sobald StreamTV selbst als Installer eingetragen ist
+        // (nach dem ersten Update aus der App heraus). Sonst fragt das System wie gewohnt nach.
+        if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        if (Build.VERSION.SDK_INT >= 26) params.setInstallReason(android.content.pm.PackageManager.INSTALL_REASON_USER)
         val id = pi.createSession(params)
         val session = pi.openSession(id)
         try {
@@ -137,6 +141,10 @@ class InstallReceiver : BroadcastReceiver() {
             }
             PackageInstaller.STATUS_SUCCESS -> Updater.finished("done", "")
             PackageInstaller.STATUS_FAILURE_ABORTED -> Updater.finished("error", "Installation abgebrochen")
+            PackageInstaller.STATUS_FAILURE_CONFLICT, PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
+                Updater.finished("error", "Signatur passt nicht zur installierten App – einmalig per ADB neu installieren (" + (i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "") + ")")
+            PackageInstaller.STATUS_FAILURE_STORAGE -> Updater.finished("error", "Zu wenig Speicher auf dem Fernseher")
+            PackageInstaller.STATUS_FAILURE_BLOCKED -> Updater.finished("error", "Installation vom System blockiert (unbekannte Apps erlauben?)")
             else -> Updater.finished("error", i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Installation fehlgeschlagen")
         }
     }

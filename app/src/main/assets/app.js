@@ -498,6 +498,12 @@ function renderSettings() {
   $('#swLite').classList.toggle('on', !!s.lite);
   $('#swNative').classList.toggle('on', s.nativeVod !== false);
   $('#swNative').classList.toggle('hidden', !(bridge && typeof bridge.nvPlay === 'function'));
+  const liveNat = !!(bridge && typeof bridge.nvPlayLive === 'function');
+  $('#swNativeLive').classList.toggle('on', s.nativeLive !== false);
+  $('#swNativeLive').classList.toggle('hidden', !liveNat);
+  $$('#bufSeg [data-buf]').forEach(b => b.classList.toggle('sel', Number(b.dataset.buf) === liveBuf()));
+  $('#addSrcBody').classList.toggle('hidden', !addSrcOpen && state.sources.length > 0);
+  $('#addSrcChev').textContent = addSrcOpen || !state.sources.length ? '⌄' : '›';
   $$('#saverSeg [data-saver]').forEach(b => b.classList.toggle('sel', Number(b.dataset.saver) === Number(s.saver)));
   $('#swVpnAuto').classList.toggle('on', !!s.vpnAuto);
   $('#swVpnReq').classList.toggle('on', !!s.vpnReq);
@@ -514,7 +520,7 @@ function renderSettings() {
         <button class="mini focusable" data-src-act="refresh" data-id="${esc(x.id)}">Aktualisieren</button>
         <button class="mini focusable" data-src-act="del" data-id="${esc(x.id)}">Entfernen</button>
       </div>
-    </div>`).join('') : `<div class="row-item"><span class="hint">Noch keine Quelle – oben einen M3U-Link oder Xtream-Zugang hinzufügen.</span></div>`;
+    </div>`).join('') : `<div class="row-item"><span class="hint">Noch keine Quelle – unten „Quelle hinzufügen“ öffnen.</span></div>`;
   renderWlGroup();
   renderVpn();
   renderUpdate();
@@ -1580,6 +1586,9 @@ let hls = null, tsPlayer = null, engine = null, failCb = null, playToken = 0, st
 const NV = { on: false, t: 0, d: NaN, paused: true, seeking: false, seekAt: 0, tracks: [] };
 window.NV = NV;   // die App ruft window.NV.ev(...) / NV.cue(...) auf
 const nvOk = () => { try { return !!(bridge && typeof bridge.nvPlay === 'function') && state.settings.nativeVod !== false; } catch (e) { return false; } };
+// Live-TV ebenfalls nativ (ExoPlayer mit großem Puffer) – viel stabiler als hls.js/mpegts.js in der WebView
+const nvLiveOk = () => { try { return !!(bridge && typeof bridge.nvPlayLive === 'function') && state.settings.nativeLive !== false; } catch (e) { return false; } };
+const liveBuf = () => [1, 2, 3].includes(Number(state.settings.liveBuf)) ? Number(state.settings.liveBuf) : 2;
 (() => {
   const P = HTMLMediaElement.prototype, d = n => Object.getOwnPropertyDescriptor(P, n);
   const ct = d('currentTime'), du = d('duration'), pa = d('paused'), se = d('seeking');
@@ -1649,19 +1658,33 @@ function startEngine(name, url, fail) {
   if (name === 'exo') {
     Object.assign(NV, { on: true, t: 0, d: NaN, paused: false, seeking: false, tracks: [] });
     document.documentElement.classList.add('nv');
-    try { bridge.nvPlay(url, 0, 'IPTVSmartersPlayer'); } catch (e) { nvStop(); return fail(); }
+    try {
+      if (vod) bridge.nvPlay(url, 0, 'IPTVSmartersPlayer');
+      else bridge.nvPlayLive(url, 'IPTVSmartersPlayer', liveBuf());
+    } catch (e) { nvStop(); return fail(); }
   } else if (name === 'hls') {
     if (!window.Hls || !Hls.isSupported()) return fail();
-    hls = new Hls({ enableWorker: true });
+    // Mehr Vorrat und Abstand zur Live-Kante, mehr Wiederholungen bei Aussetzern
+    hls = new Hls({
+      enableWorker: true, lowLatencyMode: false,
+      maxBufferLength: 30, maxMaxBufferLength: 60, backBufferLength: 30,
+      liveSyncDurationCount: 3 + liveBuf(), liveMaxLatencyDurationCount: 12,
+      manifestLoadingMaxRetry: 4, levelLoadingMaxRetry: 4, fragLoadingMaxRetry: 6
+    });
+    let mediaFix = 0;
     hls.on(Hls.Events.MANIFEST_PARSED, () => safePlay(video));
     hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => applyTrackPref());
     hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => applyTrackPref());
-    hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) fail(); });
+    hls.on(Hls.Events.ERROR, (_, d) => {
+      if (!d.fatal) return;
+      if (d.type === Hls.ErrorTypes.MEDIA_ERROR && mediaFix++ < 2) { try { hls.recoverMediaError(); return; } catch (e) {} }
+      fail();
+    });
     hls.loadSource(url);
     hls.attachMedia(video);
   } else if (name === 'ts') {
     if (!window.mpegts || !mpegts.getFeatureList().mseLivePlayback) return fail();
-    tsPlayer = mpegts.createPlayer({ type: 'mpegts', isLive: !vod, url }, { enableWorker: false, lazyLoad: false, liveBufferLatencyChasing: !vod });
+    tsPlayer = mpegts.createPlayer({ type: 'mpegts', isLive: !vod, url }, { enableWorker: false, lazyLoad: false, liveBufferLatencyChasing: false, enableStashBuffer: true, stashInitialSize: 1024 * 1024 });
     tsPlayer.on(mpegts.Events.ERROR, () => fail());
     tsPlayer.attachMediaElement(video);
     tsPlayer.load();
@@ -1686,6 +1709,7 @@ function loadStream(url, keep) {
   const token = ++playToken;
   let list = enginesFor(url);
   if (vod && nvOk()) list = ['exo', ...list];   // Serien & Filme: zuerst nativ (Dolby-Ton)
+  else if (!vod && nvLiveOk()) list = ['exo', ...list];   // Live-TV: zuerst nativ (großer Puffer)
   if (keep && RC.eng) list = [RC.eng, ...list.filter(x => x !== RC.eng)];   // zuerst die Engine, die schon lief
   const next = () => {
     if (token !== playToken) return;
@@ -2709,10 +2733,51 @@ function scrollToFocus(el) {
   else if (bot - y > botLim) y = Math.min(bot - botLim, top - topLim);
   if (y !== y0) pageScrollTo(y);
 }
+/* ---------- Eingabefelder: Tastatur erst nach OK ----------
+   Auf dem Fernseher öffnet schon das Fokussieren eines Feldes die Bildschirmtastatur.
+   Felder sind deshalb gesperrt (readonly), solange man nur darüber navigiert;
+   OK entsperrt das Feld und öffnet die Tastatur, beim Verlassen wird es wieder gesperrt. */
+const LOCK_SKIP = new Set(['checkbox', 'radio', 'file', 'range', 'button', 'submit', 'hidden', 'color']);
+function lockable(el) {
+  return el && el.tagName === 'INPUT' && el.id !== 'q' && !LOCK_SKIP.has((el.type || '').toLowerCase()) && el.dataset.nolock === undefined;
+}
+function lockField(el) {
+  if (!lockable(el)) return;
+  el.readOnly = true; el.dataset.locked = '1';
+  el.setAttribute('inputmode', 'none');
+}
+function unlockField(el) {
+  if (!el || el.dataset.locked !== '1') return;
+  el.readOnly = false; delete el.dataset.locked;
+  el.removeAttribute('inputmode');
+  el.classList.add('editing');
+  // neu fokussieren, damit das System die Tastatur öffnet
+  el.blur(); el.focus({ preventScroll: true });
+  try { const n = el.value.length; el.setSelectionRange(n, n); } catch (e) {}
+}
+function lockAll(root) {
+  if (!root || !root.querySelectorAll) return;
+  if (root.tagName === 'INPUT') lockField(root);
+  root.querySelectorAll('input').forEach(lockField);
+}
+lockAll(document.body);
+new MutationObserver(ms => { for (const m of ms) m.addedNodes.forEach(n => n.nodeType === 1 && lockAll(n)); })
+  .observe(document.body, { childList: true, subtree: true });
+document.addEventListener('focusout', e => {
+  const t = e.target;
+  if (lockable(t) && t.dataset.locked !== '1') { t.classList.remove('editing'); setTimeout(() => { if (document.activeElement !== t) lockField(t); }, 0); }
+}, true);
+document.addEventListener('keydown', e => {
+  const a = document.activeElement;
+  if (playerOpen || !a || a.dataset.locked !== '1') return;
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopImmediatePropagation(); unlockField(a); }
+}, true);
+document.addEventListener('click', e => { if (e.target && e.target.dataset && e.target.dataset.locked === '1') unlockField(e.target); }, true);
+
 document.addEventListener('keydown', e => {
   if (playerOpen) { playerKey(e); return; }
   const a = document.activeElement;
-  const typing = a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA');
+  const typing = a && ((a.tagName === 'INPUT' && !a.readOnly) || a.tagName === 'TEXTAREA');
   if (sheetOpen && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); ip ? closeIptv() : closeSheet(); return; }
   if (typing && !['ArrowUp', 'ArrowDown', 'Escape'].includes(e.key)) return;
   if (state.view === 'cats' && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); closeCats(); return; }
@@ -3023,6 +3088,14 @@ function toggleSetting(key) { state.settings[key] = !state.settings[key]; persis
 $('#swAuto').addEventListener('click', () => toggleSetting('autoRefresh'));
 $('#swLite').addEventListener('click', () => { toggleSetting('lite'); applyLite(); });
 $('#swNative').addEventListener('click', () => { state.settings.nativeVod = state.settings.nativeVod === false; persist(); renderSettings(); });
+$('#swNativeLive').addEventListener('click', () => { state.settings.nativeLive = state.settings.nativeLive === false; persist(); renderSettings(); });
+$('#bufSeg').addEventListener('click', e => { const b = e.target.closest('[data-buf]'); if (!b) return; state.settings.liveBuf = Number(b.dataset.buf); persist(); renderSettings(); });
+// „Quelle hinzufügen“ nur bei Bedarf aufklappen – spart Scrollen über die Eingabefelder
+var addSrcOpen = false;
+$('#addSrcToggle').addEventListener('click', () => {
+  addSrcOpen = !addSrcOpen; renderSettings();
+  if (addSrcOpen) $('#typeM3u').focus({ preventScroll: false });
+});
 $$('#saverSeg [data-saver]').forEach(b => b.addEventListener('click', () => { state.settings.saver = Number(b.dataset.saver); persist(); renderSettings(); b.focus({ preventScroll: true }); }));
 $('#saverNow').addEventListener('click', () => openSaver());
 $$('#themeSeg [data-theme]').forEach(b => b.addEventListener('click', () => { state.settings.theme = b.dataset.theme; persist(); applyTheme(); b.focus({ preventScroll: true }); }));
@@ -3074,11 +3147,12 @@ window.onAppResume = () => {
   // Berechtigung „Unbekannte Apps“ gerade erteilt → Update direkt fortsetzen
   if (UPD.inst && UPD.inst.st === 'perm' && bridge && bridge.canInstall && bridge.canInstall()) setTimeout(installUpdate, 400);
   if (UPD.inst && UPD.inst.st === 'confirm') { UPD.inst = null; renderUpdate(); }
-  SYNC.run(false); renderVpn(); setTimeout(renderVpn, 2500); if (playerOpen && (RC.waiting || RC.dead)) retryNow(); };
+  SYNC.run(false); renderVpn(); setTimeout(renderVpn, 2500); if (playerOpen && (RC.waiting || RC.dead)) retryNow();
+  if (!playerOpen) setTimeout(() => checkUpdate(false), 1500); };
 
 /* ================= Update-Hinweis (GitHub-Releases) ================= */
 const UPD = {
-  STORE: 'streamtv.update', EVERY: 12 * 3600 * 1000,
+  STORE: 'streamtv.update', EVERY: 30 * 60 * 1000,
   API: 'https://api.github.com/repos/Oventa-cmd/StreamTV/releases/latest',
   APK: 'https://github.com/Oventa-cmd/StreamTV/releases/latest/download/StreamTV.apk',
   s: null, busy: false,
@@ -3104,7 +3178,10 @@ async function checkUpdate(manual) {
     const j = JSON.parse(r.text);
     Object.assign(u, { at: Date.now(), latest: j.tag_name || '', date: j.published_at || '', name: j.name || '', err: '' });
     UPD.save();
-    if (updateAvailable()) toast(`Update verfügbar: Version ${u.latest.replace(/^v/, '')} – unter „Einstellungen → App-Update“ installieren`);
+    if (updateAvailable()) {
+      if (!manual && bridge && typeof bridge.installUpdate === 'function') updPrompt(u.latest.replace(/^v/, ''));
+      else toast(`Update verfügbar: Version ${u.latest.replace(/^v/, '')} – unter „Einstellungen → App-Update“ installieren`);
+    }
     else if (manual) toast(appVersion() ? 'StreamTV ist aktuell' : 'Neueste Version: ' + (u.latest || '–'));
   } catch (e) {
     u.at = Date.now(); u.err = e.message; UPD.save();
@@ -3129,7 +3206,7 @@ function renderUpdate() {
       : I.st === 'confirm' ? 'Bitte am Fernseher bestätigen …' : 'Jetzt herunterladen & installieren';
     const busy = I.st === 'progress';
     html += `<div class="row-item"><div class="meta"><b>Direkt hier aktualisieren</b>
-        <small>${I.st === 'error' ? `<span class="err">${esc(I.msg)}</span>` : I.st === 'perm' ? 'Einmalig erlauben: In den Einstellungen „StreamTV“ das Installieren unbekannter Apps zulassen, dann zurück und erneut drücken.' : 'Lädt die neue Version von GitHub und startet die Installation. Einstellungen und Daten bleiben erhalten.'}</small>
+        <small>${I.st === 'error' ? `<span class="err">${esc(I.msg)}</span>` : I.st === 'perm' ? 'Einmalig erlauben: In den Einstellungen „StreamTV“ das Installieren unbekannter Apps zulassen, dann zurück und erneut drücken.' : 'Lädt die neue Version von GitHub und installiert sie. StreamTV schließt sich dabei kurz – danach einfach wieder öffnen. Einstellungen und Daten bleiben erhalten.'}</small>
         ${busy && I.pct >= 0 ? `<span class="ip-pbar upd-bar"><i style="width:${I.pct}%"></i></span>` : ''}
       </div><div class="actions"><button class="mini primary focusable" id="updInstall" ${busy ? 'disabled' : ''}>${label}</button></div></div>`;
   }
@@ -3158,6 +3235,15 @@ function installUpdate() {
   UPD.inst = { st: 'progress', pct: 0 };
   if (!bridge.installUpdate(UPD.APK)) UPD.inst = { st: 'error', msg: 'Download läuft bereits' };
   renderUpdate();
+}
+/** Hinweis beim Start: Update direkt anbieten (zur Update-Kachel springen, OK installiert). */
+function updPrompt(ver) {
+  const u = UPD.get();
+  if (u.prompted === ver || playerOpen) { toast(`Update ${ver} verfügbar – Einstellungen → App-Update`); return; }
+  u.prompted = ver; UPD.save();
+  toast(`Update ${ver} verfügbar – OK auf „Jetzt installieren“ drücken`);
+  show('settings');
+  setTimeout(() => { const b = $('#updInstall'); if (b) { b.focus({ preventScroll: true }); b.scrollIntoView({ block: 'center' }); } }, 300);
 }
 // Rückmeldungen der App: progress <%> · confirm · done · error <Text>
 window.onUpdState = (st, info) => {

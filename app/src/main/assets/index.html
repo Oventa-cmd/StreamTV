@@ -135,9 +135,17 @@
     <div class="pad settings">
       <h1 class="large-title">Einstellungen</h1>
 
+      <!-- App-Update -->
+      <div class="group-title">App-Update</div>
+      <div class="group" id="updGroup"></div>
+      <p class="group-foot" id="updFoot"></p>
+
       <!-- Quellen -->
-      <div class="group-title">Quelle hinzufügen</div>
+      <div class="group-title">Meine Quellen</div>
+      <div class="group" id="sourceList"></div>
       <div class="group">
+        <button class="row-btn focusable" id="addSrcToggle" type="button"><span class="lbl"><b>＋ Quelle hinzufügen</b><small>M3U-Link oder Xtream-Codes-Zugang</small></span><span class="chev" id="addSrcChev">›</span></button>
+        <div id="addSrcBody" class="hidden">
         <div class="row-item">
           <div class="seg">
             <button class="sel focusable" id="typeM3u" type="button">M3U-Link</button>
@@ -168,11 +176,18 @@
           </div>
           <p class="form-err" id="xtErr"></p>
         </div>
+        </div>
       </div>
       <p class="group-foot">Xtream lädt alle Live-TV-Kanäle samt Kategorien. Bleibt ein Sender schwarz, das Format auf MPEG-TS umstellen.</p>
 
-      <div class="group-title">Meine Quellen</div>
-      <div class="group" id="sourceList"></div>
+      <!-- Wiedergabe -->
+      <div class="group-title">Wiedergabe</div>
+      <div class="group" id="playGroup">
+        <button class="switch focusable" id="swNativeLive" type="button"><span class="lbl"><b>Systemplayer für Live-TV</b><small>Größerer Puffer, stabilere Sender (wie TiviMate/Smarters). Nur ausschalten, wenn ein Sender nicht startet.</small></span><span class="knob"></span></button>
+        <div class="row-item" id="bufRow"><div class="meta"><b>Live-Puffer</b><small>Mehr Puffer = weniger Ruckler, aber etwas längeres Umschalten</small></div>
+          <div class="seg" id="bufSeg"><button class="focusable" data-buf="1" type="button">Normal</button><button class="focusable" data-buf="2" type="button">Groß</button><button class="focusable" data-buf="3" type="button">Sehr groß</button></div></div>
+        <button class="switch focusable" id="swNative" type="button"><span class="lbl"><b>Systemplayer für Serien &amp; Filme</b><small>Mit Dolby-Ton, allen Tonspuren und Untertiteln. Nur ausschalten, wenn etwas nicht abspielt.</small></span><span class="knob"></span></button>
+      </div>
 
       <!-- Serien-Empfehlungen -->
       <div class="group-title">Serien-Empfehlungen (TMDB)</div>
@@ -196,11 +211,6 @@
       </div>
       <p class="group-foot">Blendet unerwünschte Kategorien (z. B. fremdsprachige) in Live-TV, Serien, Filmen und der Suche aus. Favoriten bleiben sichtbar.</p>
 
-      <!-- App-Update -->
-      <div class="group-title">App-Update</div>
-      <div class="group" id="updGroup"></div>
-      <p class="group-foot" id="updFoot"></p>
-
       <!-- Allgemein -->
       <div class="group-title">Allgemein</div>
       <div class="group">
@@ -217,7 +227,6 @@
             <button class="focusable" data-theme="black" type="button"><i style="background:#000"></i>Schwarz</button>
           </div></div>
         <button class="switch focusable" id="swLite" type="button"><span class="lbl"><b>Effekte reduzieren</b><small>Weniger Unschärfe und Animationen – flüssiger auf älteren Fire-TV-Geräten</small></span><span class="knob"></span></button>
-        <button class="switch focusable" id="swNative" type="button"><span class="lbl"><b>Systemplayer für Serien &amp; Filme</b><small>Mit Dolby-Ton, allen Tonspuren und Untertiteln. Nur ausschalten, wenn etwas nicht abspielt.</small></span><span class="knob"></span></button>
         <button class="switch focusable" id="swAuto" type="button"><span class="lbl"><b>Quellen beim Start aktualisieren</b><small>Wenn die letzte Aktualisierung über 6 Stunden her ist</small></span><span class="knob"></span></button>
         <button class="row-btn focusable" id="demoAdd" type="button"><span>Demo-Kanäle hinzufügen</span><span class="chev">›</span></button>
         <button class="row-btn danger focusable" id="resetAll" type="button"><span>Alles zurücksetzen</span><span class="chev">›</span></button>
