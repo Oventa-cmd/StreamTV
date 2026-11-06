@@ -64,7 +64,7 @@ const WL = {
     if (!this.connected) return;
     if (!force && Date.now() - (this.s.loadedAt || 0) < 60000) return;
     if (!await this.ensureToken()) return;
-    const r = await this.http('GET', '/rest/v1/items?select=media_type,tmdb_id,title,status,rating,position,updated_at,poster_path,backdrop_path,meta');
+    const r = await this.http('GET', '/rest/v1/items?select=media_type,tmdb_id,title,status,rating,position,updated_at,poster_path,backdrop_path,meta,progress');
     if (r.status < 200 || r.status > 299) return;
     this.s.items = JSON.parse(r.text);
     this.s.loadedAt = Date.now();
@@ -82,6 +82,16 @@ const WL = {
     return null;
   },
   keys() { return new Set((this.s.items || []).map(o => o.media_type + ':' + o.tmdb_id)); },
+  /** Eintrag zu „tv:123“ bzw. (type, id) – oder null. */
+  item(type, id) { return (this.s.items || []).find(o => o.media_type === type && Number(o.tmdb_id) === Number(id)) || null; },
+  /** Laut Watchlist gesehen? (Serie: progress { "1": [1,2,3] }, Film: Status „done“) */
+  seen(type, id, season, num) {
+    const o = id > 0 ? this.item(type, id) : null;
+    if (!o) return false;
+    if (type === 'movie') return o.status === 'done';
+    const l = o.progress && o.progress[String(season)];
+    return Array.isArray(l) && l.includes(Number(num));
+  },
   /** Gewichtung wie im TV-Launcher (Bewertung schlägt Status). */
   seeds() {
     const base = { done: 0.8, watching: 1.0, planned: 0.5, dropped: -0.7 };

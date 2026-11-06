@@ -58,6 +58,9 @@ class MainActivity : Activity() {
             userAgentString = "IPTVSmartersPlayer"
         }
         web.addJavascriptInterface(Bridge(), "StreamTVApp")
+        Updater.report = { st, info ->
+            runOnUiThread { web.evaluateJavascript("window.onUpdState && onUpdState(" + JSONObject.quote(st) + "," + JSONObject.quote(info) + ")", null) }
+        }
 
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
@@ -183,6 +186,11 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun deviceName(): String = android.os.Build.MODEL ?: "TV"
+
+        // ---------- App-Update direkt in der App ----------
+        @JavascriptInterface fun canInstall(): Boolean = Updater.allowed(this@MainActivity)
+        @JavascriptInterface fun openInstallPermission(): Boolean = Updater.openPermission(this@MainActivity)
+        @JavascriptInterface fun installUpdate(url: String): Boolean = Updater.start(this@MainActivity, url)
 
         @JavascriptInterface
         fun appVersion(): String = try {
@@ -312,6 +320,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        Updater.report = null
         native.release()
         web.destroy()
         super.onDestroy()

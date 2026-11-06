@@ -15,6 +15,7 @@ const RAIL_MAX = 30, ROWS_MAX = 15, GRID_MAX = 300, LIST_MAX = 200;
 const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
   .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
+let navY = 0, navYAt = 0;   // Ziel des laufenden Seiten-Scrollens (siehe pageScrollTo)
 const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], hideVod: [], lite: false, theme: 'graphite', saver: 5, nativeVod: true };
 
 let state = { channels: [], favs: [], recent: [], sources: [], settings: { ...DEFAULT_SETTINGS }, cat: 'Alle', view: 'home' };
@@ -372,7 +373,7 @@ function moveStep(dir) {
   if (!sib || !sib.dataset.show) return;
   if (dir < 0) sib.before(el); else sib.after(el);
   el.focus({ preventScroll: true });
-  el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  scrollInRow(el);
 }
 function endMove() {
   if (!WLM.on) return;
@@ -680,16 +681,18 @@ function renderSheet(p, d) {
   const meta = [TM.info(p), seasons, genres.join(', ') || null].filter(Boolean).join(' · ');
   const prov = d ? TM.providersDE(d) : [];
   const onList = WL.connected && WL.keys().has(key);
+  const wlo = onList ? WL.item(p.type, p.id) : null;
+  const wlLbl = !wlo ? '' : wlo.status === 'watching' ? '✓ Am Schauen' : wlo.status === 'done' ? '✓ Gesehen' : wlo.status === 'dropped' ? '✓ Abgebrochen' : '✓ Auf deiner Watchlist';
   const focusedId = document.activeElement && document.activeElement.id;
   $('#sheetInner').innerHTML = `
     ${logo ? `<img class="logo-img" src="${TM.IMG}w500${logo}" alt="">` : `<h1>${esc(p.title)}</h1>`}
-    ${p.reason ? `<div class="reason">${esc(p.reason)}</div>` : ''}
+    ${p.reason || wlLbl ? `<div class="reason">${esc(p.reason || '')}${wlLbl ? `<span class="wl-tag">${wlLbl}</span>` : ''}</div>` : ''}
     <div class="meta">${esc(meta)}</div>
     <p class="ov">${esc((d && d.overview) || p.overview || 'Keine Beschreibung vorhanden.')}</p>
     ${prov.length ? `<div class="prov">${prov.map(n => `<span>${esc(n)}</span>`).join('')}</div>` : ''}
     <div class="btn-row">
       <button class="btn primary focusable" id="shIptv" data-iptv="${key}">▶ Beim Anbieter suchen</button>
-      ${WL.connected ? `<button class="btn focusable" id="shAdd" ${onList ? 'disabled' : ''}>${onList ? '✓ Auf deiner Watchlist' : '+ Auf die Watchlist'}</button>` : ''}
+      ${WL.connected && !onList ? `<button class="btn focusable" id="shAdd">+ Auf die Watchlist</button>` : ''}
       <button class="btn focusable" id="shLive" data-livesearch="${esc(p.title)}">Suchen</button>
       <button class="btn focusable" id="shClose">Schließen</button>
     </div>`;
@@ -765,7 +768,14 @@ async function selectHit(i) {
     const info = ip.p.type === 'movie' ? await XS.movie(h.acc, h.it) : await XS.info(h.acc, h.it.sid);
     if (!ip || ip.token !== tok || ip.sel !== h) return;
     ip.info = info; ip.status = 'show';
+    if (!(ip.p.id > 0) && TM.key()) {
+      const tm = await guessTmdb(h.it.name, ip.p.type === 'movie');
+      if (!ip || ip.token !== tok || ip.sel !== h) return;
+      if (tm) { ip.p.id = Number(tm.split(':')[1]); if (!h.it.tmdb) h.it.tmdb = ip.p.id; }
+    }
     ip.season = resumeEp(info) ? resumeEp(info).season : info.seasons[0].num;
+    // Fortschritt aus der Watchlist-App (z. B. woanders gesehen) frisch holen
+    if (WL.connected) { const cur = ip; WL.refreshItems(false).then(() => { if (ip === cur && ip.status === 'show') renderIptv(); }).catch(() => {}); }
     renderIptv(true);
     if (ip.autoplay) autoPlayIptv();
   } catch (e) {
@@ -778,9 +788,16 @@ function resumeEp(info) {
   const all = info.seasons.flatMap(s => s.eps);
   let best = null, idx = -1;
   all.forEach((e, i) => { const v = VP.get(e.id); if (v && (!best || v.at > best.at)) { best = v; idx = i; } });
-  if (idx < 0) return null;
-  return VP.done(all[idx].id) ? all[idx + 1] || null : all[idx];
+  let local = idx < 0 ? -1 : VP.done(all[idx].id) ? idx + 1 : idx;
+  // Watchlist-Fortschritt (auch woanders gesehen): nach der letzten gesehenen Folge weiter, wenn das weiter ist
+  let wl = -1;
+  all.forEach((e, i) => { if (wlSeenEp(e)) wl = i + 1; });
+  const at = Math.max(local, wl);
+  return at >= 0 ? all[at] || null : null;
 }
+/** Folge laut StreamTV oder Watchlist gesehen? */
+const wlSeenEp = e => !!(ip && ip.p && WL.connected && ip.p.id > 0 && WL.seen(ip.p.type, ip.p.id, e.season, e.num));
+const epDone = e => VP.done(e.id) || wlSeenEp(e);
 const GENERIC_EP = /^(folge|episode|ep\.?)\s*\d+$/i;
 /** Folge mit TMDB-Infos anreichern (Standbild, Titel, Beschreibung). */
 function epView(e) {
@@ -826,7 +843,7 @@ function renderIptv(focusResume) {
       const n = ip.info.seasons.reduce((a, s) => a + s.eps.length, 0), ns = ip.info.seasons.filter(s => s.num).length;
       sub = [year, ns ? `${ns} Staffel${ns > 1 ? 'n' : ''}` : '', `${n} Folgen`, ip.sel.acc.name].filter(Boolean).join(' · ');
       const all = ip.info.seasons.flatMap(s => s.eps), r = resumeEp(ip.info) || all[0];
-      const rv = VP.get(r.id), cont = rv && rv.pos > 30 && !VP.done(r.id);
+      const rv = VP.get(r.id), cont = rv && rv.pos > 30 && !epDone(r);
       const si = ip.info.seasons.find(s => s.num === r.season).eps.indexOf(r);
       btns.push(`<button class="btn primary focusable" data-ipk="play" data-ip="ep" data-s="${r.season}" data-i="${si}">▶ ${cont ? 'Weiterschauen' : 'Abspielen'} · ${r.season ? 'S' + r.season + ':' : ''}F${r.num}</button>`);
       if (cont) btns.push(`<button class="btn focusable" data-ipk="restart" data-ip="restart" data-s="${r.season}" data-i="${si}">↺ Folge von vorne</button>`);
@@ -834,12 +851,12 @@ function renderIptv(focusResume) {
       const season = ip.info.seasons.find(s => s.num === ip.season) || ip.info.seasons[0];
       loadSeasonTm(season.num);
       const col = ip.info.seasons.length > 1 ? `<div class="ep-seasons">${ip.info.seasons.map(s => {
-        const seen = s.eps.filter(e => VP.done(e.id)).length;
+        const seen = s.eps.filter(epDone).length;
         return `<button class="ep-season focusable ${s.num === season.num ? 'active' : ''}" data-ipk="s${s.num}" data-ip="season" data-s="${s.num}">
           <b>${s.num ? 'Staffel ' + s.num : 'Extras'}</b><small>${s.eps.length} Folgen${seen ? ` · ${seen} gesehen` : ''}</small></button>`;
       }).join('')}</div>` : '';
       const rows = season.eps.map((e, i) => {
-        const v = VP.get(e.id), done = VP.done(e.id), x = epView(e);
+        const v = VP.get(e.id), done = epDone(e), x = epView(e);
         const dur = e.dur || (v && v.dur) || 0, pct = v && v.dur ? Math.min(100, v.pos / v.dur * 100) : 0;
         const state = done ? '<span class="ep-st ok">✓ Gesehen</span>' : v && v.pos > 30 ? `<span class="ep-st go">Weiter bei ${fmtTime(v.pos)}</span>` : '';
         return `<button class="ep focusable ${done ? 'seen' : ''}" data-ipk="e${e.id}" data-ip="ep" data-s="${season.num}" data-i="${i}">
@@ -851,6 +868,12 @@ function renderIptv(focusResume) {
       }).join('');
       body = `<div class="ep-cols ${col ? '' : 'single'}">${col}<div class="ep-list">${rows}</div></div>`;
     }
+  }
+  let wlTag = '';
+  if (ip.status === 'show' && WL.connected) {
+    const o = p.id > 0 ? WL.item(p.type, p.id) : null;
+    if (o) wlTag = `<span class="wl-tag">✓ ${o.status === 'watching' ? 'Am Schauen' : o.status === 'done' ? 'Gesehen' : o.status === 'dropped' ? 'Abgebrochen' : 'Auf deiner Watchlist'}</span>`;
+    else btns.push(`<button class="btn focusable" data-ipk="wl" data-ip="wl">${ip.wlBusy ? 'Speichere …' : '+ Watchlist'}</button>`);
   }
   if (ip.sel && ip.hits.length > 1) btns.push(`<button class="btn focusable" data-ipk="hits" data-ip="hits">Andere Treffer (${ip.hits.length})</button>`);
   if (['error', 'empty'].includes(ip.status)) btns.push(`<button class="btn focusable" data-ipk="retry" data-ip="retry">Erneut versuchen</button>`,
@@ -868,7 +891,7 @@ function renderIptv(focusResume) {
   const logo = d && TM.pickLogo(d);
   $('#sheetInner').innerHTML = `
     <div class="ip-head">
-      <div class="eyebrow">${film ? 'Film' : 'Serie'} · bei deinem Anbieter</div>
+      <div class="eyebrow">${film ? 'Film' : 'Serie'} · bei deinem Anbieter${wlTag}</div>
       ${logo ? `<img class="ep-logo" src="${TM.IMG}w500${logo}" alt="">` : `<h1>${esc(p.title)}</h1>`}
       <div class="meta ${ip.status === 'error' ? 'err' : ''}">${esc(sub)}</div>
       ${ov ? `<p class="ep-ov">${esc(ov)}</p>` : ''}
@@ -889,6 +912,26 @@ function renderIptv(focusResume) {
     if (target.closest('.ip-head')) $('#sheetInner').scrollTop = 0; else target.scrollIntoView({ block: 'nearest' });
   }
 }
+/** Titel aus der Anbieter-Ansicht auf die Watchlist setzen. */
+async function ipWatchlist() {
+  if (!ip || ip.wlBusy) return;
+  const cur = ip, p = ip.p;
+  cur.wlBusy = true; renderIptv();
+  try {
+    if (!(p.id > 0)) {
+      const tm = await guessTmdb(cur.sel ? cur.sel.it.name : p.title, p.type === 'movie');
+      if (!tm) throw new Error('Titel bei TMDB nicht gefunden');
+      p.id = Number(tm.split(':')[1]);
+    }
+    const det = cur.d || await TM.details(p.type, p.id);
+    if (!cur.d) cur.d = det;
+    await WL.addPlanned(p.type, det);
+    toast(`„${p.title}“ steht jetzt auf deiner Watchlist`);
+    renderRecs();
+  } catch (e) { toast('Watchlist: ' + e.message); }
+  cur.wlBusy = false;
+  if (ip === cur) { renderIptv(); const b = $('#sheet [data-ipk="play"]'); if (b && !$('#sheet [data-ipk="wl"]')) b.focus({ preventScroll: true }); }
+}
 function closeIptv(fromPop) {
   if (!ip) return;
   if (ip.cat) {   // aus dem Serien-Reiter geöffnet: gleich ganz schließen
@@ -908,6 +951,7 @@ function iptvClick(el, epArg) {
     if (ip.cat) { ip.token = Date.now(); return selectHit(0); }
     const key = ip.p.type + ':' + ip.p.id; closeIptv(); return openIptv(key);
   }
+  if (a === 'wl') return ipWatchlist();
   if (a === 'hits') { ip.sel = null; ip.info = null; ip.status = 'list'; return renderIptv(); }
   if (a === 'hit') return selectHit(Number(el.dataset.i));
   if (a === 'season') { ip.season = Number(el.dataset.s); renderIptv(); const c = $(`#sheet [data-ipk="s${ip.season}"]`); if (c) c.focus({ preventScroll: true }); return; }
@@ -1479,7 +1523,7 @@ function show(view) {
   const tabView = TAB_OF[view] || view;
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === tabView));
-  window.scrollTo(0, 0);
+  window.scrollTo(0, 0); navY = 0; navYAt = 0;
   EPG.scan();
   updateHeader(); moveTabInd();
   const tab = $(`.tabbar [data-view="${tabView}"]`);
@@ -2560,17 +2604,70 @@ function navigate(dir) {
   if (best.closest('.tabbar') && !cur.closest('.tabbar')) best = $('.tabbar button.active') || best;
   if (best.closest('.ep-seasons') && cur.closest('.ep-list')) best = $('#sheet .ep-season.active') || best;
   best.focus({ preventScroll: true });
-  if (best.closest('header')) return;
-  // Oberste Zeile der Seite erreicht → ganz nach oben (Billboard, Überschriften sichtbar)
-  if (dir === 'ArrowUp' && !sheetOpen) {
-    const bt = best.getBoundingClientRect().top;
-    if (!all.some(el => el !== best && !el.closest('header') && el.getBoundingClientRect().top < bt - 4)) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  if (sheetOpen) {
+    // Oberstes Element der Detailansicht → ganz nach oben (Titel, Logo, Beschreibung wieder sichtbar)
+    const box = best.closest('.inner');
+    if (dir === 'ArrowUp' && box && box.scrollHeight > box.clientHeight) {
+      const bt = best.getBoundingClientRect().top;
+      if (!all.some(el => el !== best && el.getBoundingClientRect().top < bt - 4)) { box.scrollTo({ top: 0, behavior: scrollMode() }); scrollInRow(best); return; }
+    }
+    best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: scrollMode() });
+    return;
   }
-  best.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  // In die Kopfzeile oder in die oberste Zeile der Seite → immer ganz nach oben
+  if (best.closest('header')) { pageScrollTo(0); return; }
+  if (dir === 'ArrowUp') {
+    const bt = best.getBoundingClientRect().top;
+    if (!all.some(el => el !== best && !el.closest('header') && el.getBoundingClientRect().top < bt - 4)) { scrollInRow(best); pageScrollTo(0); return; }
+  }
+  // Unterste Zeile erreicht → ganz nach unten (Fußnoten sichtbar)
+  if (dir === 'ArrowDown') {
+    const bb = best.getBoundingClientRect().bottom;
+    if (!all.some(el => el !== best && !el.closest('header') && el.getBoundingClientRect().bottom > bb + 4)) { scrollInRow(best); pageScrollTo(1e9); return; }
+  }
+  scrollToFocus(best);
+}
+/* ---------- Scrollen zum Fokus ----------
+   Eigene Berechnung statt scrollIntoView + scrollBy: Zwei gleichzeitige weiche Scrollvorgänge haben sich
+   gegenseitig abgebrochen (Seite blieb auf halber Strecke stehen, oben nicht ganz sichtbar). Hier wird immer
+   vom Ziel des laufenden Scrollvorgangs aus gerechnet und nur ein einziger Scrollbefehl abgesetzt. */
+const scrollMode = () => state.settings.lite ? 'auto' : 'smooth';
+function pageScrollTo(y) {
+  const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+  y = Math.round(Math.max(0, Math.min(max, y)));
+  navY = y; navYAt = Date.now();
+  if (Math.abs(window.scrollY - y) < 1) return;
+  window.scrollTo({ top: y, behavior: scrollMode() });
+}
+/** Wo die Seite gleich steht (Ziel eines noch laufenden Scrollvorgangs). */
+const pageY = () => Date.now() - navYAt < 700 ? navY : window.scrollY;
+/** Waagrecht in Reihe/Chips scrollen, mit Rand für Zoom und Schatten. */
+function scrollInRow(el) {
+  const row = el.closest('.rail, .chips');
+  if (!row || row.scrollWidth <= row.clientWidth + 1) return;
+  const rr = row.getBoundingClientRect(), er = el.getBoundingClientRect();
+  const pad = Math.max(32, rr.width * 0.045);
+  const now = row.scrollLeft, base = row._navAt && Date.now() - row._navAt < 700 ? row._navX : now;
+  const absL = now + er.left - rr.left, absR = now + er.right - rr.left;
+  let x = base;
+  if (absL - x < pad) x = absL - pad;
+  else if (absR - x > rr.width - pad) x = absR - rr.width + pad;
+  x = Math.max(0, Math.min(row.scrollWidth - row.clientWidth, Math.round(x)));
+  row._navX = x; row._navAt = Date.now();
+  if (Math.abs(x - now) >= 1) row.scrollTo({ left: x, behavior: scrollMode() });
+}
+function scrollToFocus(el) {
+  scrollInRow(el);
+  const hb = $('header').getBoundingClientRect().bottom;
+  const now = window.scrollY, y0 = pageY();
   // Zeilenüberschrift mit sichtbar halten (nicht unter der Kopfzeile verstecken)
-  const sec = best.closest('.rail') ? best.closest('section') : null;
-  const hb = $('header').getBoundingClientRect().bottom, br = (sec || best).getBoundingClientRect();
-  if (!sheetOpen && br.top < hb + 12) window.scrollBy({ top: br.top - hb - 16, behavior: 'smooth' });
+  const sec = el.closest('.rail') ? el.closest('section') : null;
+  const top = now + (sec || el).getBoundingClientRect().top, bot = now + el.getBoundingClientRect().bottom;
+  const topLim = hb + 16, botLim = window.innerHeight - 28;
+  let y = y0;
+  if (top - y < topLim) y = top - topLim;
+  else if (bot - y > botLim) y = Math.min(bot - botLim, top - topLim);
+  if (y !== y0) pageScrollTo(y);
 }
 document.addEventListener('keydown', e => {
   if (playerOpen) { playerKey(e); return; }
@@ -2933,7 +3030,11 @@ function vpnOnStart() {
     setTimeout(() => { const w = vpn(); if (w && !w.active) bridge.openVpn(); }, 1500);
   }
 }
-window.onAppResume = () => { SYNC.run(false); renderVpn(); setTimeout(renderVpn, 2500); if (playerOpen && (RC.waiting || RC.dead)) retryNow(); };
+window.onAppResume = () => {
+  // Berechtigung „Unbekannte Apps“ gerade erteilt → Update direkt fortsetzen
+  if (UPD.inst && UPD.inst.st === 'perm' && bridge && bridge.canInstall && bridge.canInstall()) setTimeout(installUpdate, 400);
+  if (UPD.inst && UPD.inst.st === 'confirm') { UPD.inst = null; renderUpdate(); }
+  SYNC.run(false); renderVpn(); setTimeout(renderVpn, 2500); if (playerOpen && (RC.waiting || RC.dead)) retryNow(); };
 
 /* ================= Update-Hinweis (GitHub-Releases) ================= */
 const UPD = {
@@ -2963,7 +3064,7 @@ async function checkUpdate(manual) {
     const j = JSON.parse(r.text);
     Object.assign(u, { at: Date.now(), latest: j.tag_name || '', date: j.published_at || '', name: j.name || '', err: '' });
     UPD.save();
-    if (updateAvailable()) toast(`Update verfügbar: Version ${u.latest.replace(/^v/, '')} – Details unter „Einstellungen“`);
+    if (updateAvailable()) toast(`Update verfügbar: Version ${u.latest.replace(/^v/, '')} – unter „Einstellungen → App-Update“ installieren`);
     else if (manual) toast(appVersion() ? 'StreamTV ist aktuell' : 'Neueste Version: ' + (u.latest || '–'));
   } catch (e) {
     u.at = Date.now(); u.err = e.message; UPD.save();
@@ -2981,14 +3082,51 @@ function renderUpdate() {
       <small>Installiert: ${esc(cur || '– (nur in der TV-App)')}${latest ? ' · Neueste: ' + esc(latest) : ''} · geprüft: ${esc(when)}</small>
       ${u.err ? `<small class="err">${esc(u.err)}</small>` : ''}
     </div><div class="actions"><button class="mini focusable" id="updCheck" ${UPD.busy ? 'disabled' : ''}>${UPD.busy ? 'Prüfe …' : 'Jetzt prüfen'}</button></div></div>`;
-  if (avail) html += `<div class="row-item upd-cmd"><div class="meta"><b>Am PC aktualisieren (ADB)</b>
-      <code>curl -L -o StreamTV.apk ${esc(UPD.APK)}\nadb connect &lt;IP-des-Fernsehers&gt;:5555\nadb install -r StreamTV.apk</code>
-      <small>Oder in der Downloader-App: ${esc(UPD.APK)}</small></div></div>`;
+  const inApp = !!(bridge && typeof bridge.installUpdate === 'function');
+  if (avail && inApp) {
+    const I = UPD.inst || {};
+    const label = I.st === 'progress' ? (I.pct >= 0 ? `Lade … ${I.pct} %` : 'Lade …')
+      : I.st === 'confirm' ? 'Bitte am Fernseher bestätigen …' : 'Jetzt herunterladen & installieren';
+    const busy = I.st === 'progress';
+    html += `<div class="row-item"><div class="meta"><b>Direkt hier aktualisieren</b>
+        <small>${I.st === 'error' ? `<span class="err">${esc(I.msg)}</span>` : I.st === 'perm' ? 'Einmalig erlauben: In den Einstellungen „StreamTV“ das Installieren unbekannter Apps zulassen, dann zurück und erneut drücken.' : 'Lädt die neue Version von GitHub und startet die Installation. Einstellungen und Daten bleiben erhalten.'}</small>
+        ${busy && I.pct >= 0 ? `<span class="ip-pbar upd-bar"><i style="width:${I.pct}%"></i></span>` : ''}
+      </div><div class="actions"><button class="mini primary focusable" id="updInstall" ${busy ? 'disabled' : ''}>${label}</button></div></div>`;
+  }
+  if (avail) html += `<div class="row-item upd-cmd"><div class="meta"><b>${inApp ? 'Alternativ am PC (ADB)' : 'Am PC aktualisieren (ADB)'}</b>
+      <code>curl.exe -L -o StreamTV.apk ${esc(UPD.APK)}\nadb connect &lt;IP-des-Fernsehers&gt;:&lt;Port&gt;\nadb install -r StreamTV.apk</code></div></div>`;
+  const hadFocus = document.activeElement && document.activeElement.id;
   box.innerHTML = html;
+  if (hadFocus && box.querySelector('#' + hadFocus)) box.querySelector('#' + hadFocus).focus({ preventScroll: true });
   $('#updFoot').textContent = avail ? 'Die IP steht unter Einstellungen → Netzwerk (Fire TV: Mein Fire TV → Info → Netzwerk). Einstellungen und Daten bleiben beim Update erhalten.' : '';
   $$('.tabbar [data-view="settings"]').forEach(b => b.classList.toggle('badge', avail));
 }
-document.addEventListener('click', e => { if (e.target.closest('#updCheck')) checkUpdate(true); });
+document.addEventListener('click', e => {
+  if (e.target.closest('#updCheck')) checkUpdate(true);
+  if (e.target.closest('#updInstall')) installUpdate();
+});
+/** Update direkt in der App laden und installieren (Android-Seite: Updater.kt). */
+function installUpdate() {
+  if (!bridge || typeof bridge.installUpdate !== 'function') return;
+  if (UPD.inst && UPD.inst.st === 'progress') return;
+  if (!bridge.canInstall()) {
+    UPD.inst = { st: 'perm' }; renderUpdate();
+    toast('Bitte „Unbekannte Apps installieren“ für StreamTV erlauben');
+    setTimeout(() => bridge.openInstallPermission(), 700);
+    return;
+  }
+  UPD.inst = { st: 'progress', pct: 0 };
+  if (!bridge.installUpdate(UPD.APK)) UPD.inst = { st: 'error', msg: 'Download läuft bereits' };
+  renderUpdate();
+}
+// Rückmeldungen der App: progress <%> · confirm · done · error <Text>
+window.onUpdState = (st, info) => {
+  if (st === 'progress') { const pct = Number(info); if (UPD.inst && UPD.inst.st === 'progress' && UPD.inst.pct === pct) return; UPD.inst = { st, pct }; }
+  else if (st === 'error') { UPD.inst = { st, msg: info || 'Fehler' }; toast('Update: ' + (info || 'Fehler')); }
+  else if (st === 'done') { UPD.inst = null; toast('Update installiert'); }
+  else UPD.inst = { st };
+  if (state.view === 'settings') renderUpdate();
+};
 
 /* ================= Design: Kopfzeile, Tab-Pill, Übergänge ================= */
 function updateHeader() {

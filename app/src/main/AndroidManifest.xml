@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- App-Update direkt in der App installieren -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <queries>
         <package android:name="ch.protonvpn.android" />
@@ -46,6 +48,9 @@
                 <data android:scheme="streamtv" />
             </intent-filter>
         </activity>
+
+        <!-- Rueckmeldung des Systeminstallers beim App-Update -->
+        <receiver android:name=".InstallReceiver" android:exported="false" />
 
         <!-- "Weiterschauen" fuer den TV-Launcher (nur lesen, Zugriff nur fuer de.oventa.tvlauncher) -->
         <provider

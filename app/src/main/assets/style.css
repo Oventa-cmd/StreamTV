@@ -737,3 +737,10 @@ header.scrolled{background:rgba(var(--bgr),.72)}
 /* Fokus nie abschneiden: beim Scrollen bleibt Platz für Vergrößerung und Schatten */
 .rail,.chips{scroll-padding:0 var(--pad)}
 .search-res .rail{scroll-padding:0 1.2rem}
+
+/* ---------- App-Update in der App ---------- */
+.mini.primary{background:#fff;color:#000}
+.mini:disabled{opacity:.75}
+.upd-bar{max-width:24rem}
+.wl-tag{display:inline-block;margin-left:.6rem;padding:.12rem .55rem;border-radius:999px;background:rgba(48,209,88,.18);color:#7ee29a;font-size:.72rem;letter-spacing:0;text-transform:none;font-weight:700;vertical-align:middle}
+.reason .wl-tag:first-child{margin-left:0}

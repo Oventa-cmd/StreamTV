@@ -34,7 +34,7 @@ IPTV-Player für Fire TV / Android TV im Apple-Stil (WebView-App, Oberfläche li
 
 **Sonstiges**
 - ProtonVPN-Anbindung (Autostart, „nur mit VPN abspielen“)
-- **Update-Hinweis:** prüft höchstens alle 12 h die neueste GitHub-Version und zeigt den ADB-Befehl unter „Einstellungen → App-Update“
+- **App-Update:** prüft höchstens alle 12 h die neueste GitHub-Version; unter „Einstellungen → App-Update“ lässt sie sich direkt in der App laden und installieren (einmalig „Unbekannte Apps installieren“ erlauben), alternativ per ADB
 
 ## Watchlist-Konto vom PC übertragen
 
