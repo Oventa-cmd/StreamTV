@@ -89,14 +89,14 @@ button.pill:focus{background:#fff;color:#000}
 .btn-row{display:flex;gap:.7rem;flex-wrap:wrap;align-items:center}
 
 /* ---------- Chips ---------- */
-.chips{display:flex;gap:.55rem;overflow-x:auto;padding:.8rem var(--pad) .4rem;scrollbar-width:none}
+.chips{display:flex;gap:.55rem;overflow-x:auto;padding:.8rem var(--pad) .6rem;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{flex:0 0 auto;padding:.5rem 1.05rem;border-radius:999px;background:var(--glass);border:1px solid var(--line);white-space:nowrap;color:var(--mut);font-weight:600;font-size:.88rem;transition:all .25s var(--ease)}
 .chip.active{background:var(--glass2);color:var(--txt)}
 .chip:focus{background:#fff;color:#000;transform:scale(1.07)}
 
 /* ---------- Reihen & Raster ---------- */
-.rail{display:flex;gap:1.1rem;overflow-x:auto;padding:1rem var(--pad) 1.4rem;scroll-behavior:smooth;scrollbar-width:none}
+.rail{display:flex;gap:1.1rem;overflow-x:auto;padding:1.2rem var(--pad) 1.4rem;scroll-behavior:smooth;scrollbar-width:none}
 .rail::-webkit-scrollbar{display:none}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:1.6rem 1.2rem;padding:1rem var(--pad)}
 
@@ -581,11 +581,14 @@ body.lite .sv-bg{filter:brightness(.4)}
 .search-res #searchInfo{margin:.2rem 0 .2rem}
 .search-res .empty{padding:1rem 0}
 .search-res .section-label{padding:0;margin-top:1rem}
-.search-res .rail{padding-left:0;padding-right:0}
+.search-res .rail{padding-left:1.2rem;padding-right:1.2rem;margin:0 -1.2rem;scroll-padding:0 1.2rem}
 
 /* Billboard: Inhalt bleibt immer unter der Kopfzeile (Logos + lange Texte auf dem Fire TV) */
 .hero{height:min(86vh,700px);padding:calc(var(--hdr) + .6rem) var(--pad) 6.6rem}
-.hero-content{max-height:100%;display:flex;flex-direction:column;justify-content:flex-end;min-height:0;overflow:hidden}
+.hero-content{max-height:100%;display:flex;flex-direction:column;justify-content:flex-end;min-height:0;overflow:hidden;
+  padding:1rem 2rem 2.6rem;margin:0 -2rem -2.6rem;max-width:calc(min(620px,60%) + 4rem)}
+/* ↑ Luft, damit vergrößerte Buttons samt Schatten nicht abgeschnitten werden */
+@media (max-width:900px){.hero-content{max-width:calc(100% + 4rem)}}
 .hero-content>*{flex:0 0 auto}
 .hero-logo{max-width:min(20rem,70%);max-height:4.8rem;margin:.35rem 0 .55rem}
 .hero h1{font-size:clamp(2rem,4.4vw,3.4rem);margin:.3rem 0 .45rem;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -730,3 +733,7 @@ header.scrolled{background:rgba(var(--bgr),.72)}
 .tile.moving .caption{color:var(--txt)}
 .wl-row.sorting .tile:not(.moving){opacity:.55;transition:opacity .2s}
 .wl-row.sorting .tile:not(.moving) .art{transition:transform .35s var(--spring)}
+
+/* Fokus nie abschneiden: beim Scrollen bleibt Platz für Vergrößerung und Schatten */
+.rail,.chips{scroll-padding:0 var(--pad)}
+.search-res .rail{scroll-padding:0 1.2rem}

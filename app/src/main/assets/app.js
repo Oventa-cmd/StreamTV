@@ -573,6 +573,16 @@ function setupHero() {
     renderHero();
   }, 9000);
 }
+let heroFlipAt = 0;
+/** Billboard per Fernbedienung weiterblättern; Fokus bleibt auf dem gleichen Button. */
+function heroFlip(step, from) {
+  heroFlipAt = Date.now();
+  const which = from && from.dataset && from.dataset.play ? 'play' : 'show';
+  heroIdx = (heroIdx + step + heroItems.length) % heroItems.length;
+  renderHero();
+  const b = $(`#heroContent [data-${which}]`);
+  if (b) b.focus({ preventScroll: true });
+}
 let heroLayer = 0, heroShown = '', heroAnimKey = '';
 /** Hintergrund weich überblenden (zwei Ebenen, Ken-Burns-Zoom). */
 function heroBackdrop(url) {
@@ -613,7 +623,12 @@ function renderHero() {
       <button class="btn focusable" data-show="${p.type}:${p.id}">Details</button></div>`;
     $('#heroDots').innerHTML = heroItems.map((_, i) => `<i class="${i === heroIdx ? 'on' : ''}"></i>`).join('');
     heroEnter('tmdb:' + p.id);
-    if (!d) TM.details(p.type, p.id).then(() => { if (heroItems[heroIdx] === p && !$('#hero').contains(document.activeElement)) renderHero(); }).catch(() => {});
+    if (!d) TM.details(p.type, p.id).then(() => {
+      if (heroItems[heroIdx] !== p) return;
+      const f = document.activeElement, w = f && f.closest && f.closest('#hero') ? (f.dataset.play ? 'play' : 'show') : null;
+      renderHero();
+      if (w) { const b = $(`#heroContent [data-${w}]`); if (b) b.focus({ preventScroll: true }); }
+    }).catch(() => {});
     return;
   }
   heroBackdrop('');
@@ -1724,7 +1739,7 @@ function openVod(list, idx, show, ctx) {
     if (v && v.installed && !v.active) { toast('Kein VPN – ProtonVPN wird geöffnet'); setTimeout(() => bridge.openVpn(), 900); return; }
   }
   enterPlayer();
-  setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false, synced: false, segs: [], segReady: false, used: {}, burst: null });
+  setVod({ list, idx, show, ep, ctx: ctx || null, resumed: false, synced: false, segs: [], segReady: false, used: {}, hid: {}, burst: null });
   currentId = null;
   $('#pTitle').textContent = ep.movie ? (ctx && ctx.name) || show : `${ep.num}. ${ep.title}`;
   $('#pGroup').textContent = ep.movie ? 'Film' + (ctx && ctx.src ? ' · ' + ctx.src : '') : `${(ctx && ctx.name) || show} · Staffel ${ep.season}`;
@@ -1769,7 +1784,8 @@ async function fillNext() {
 // Quellen: TheIntroDB → selbst gelernt pro Serie → Faustregel (siehe skip.js)
 // INTRO_SKIP bewusst knapp: lieber noch im Intro landen als schon in der Folge
 // AUTO_NEXT: Sekunden bis „Nächste Folge“ automatisch ausgelöst wird (Auto-Play)
-const INTRO_WINDOW = 300, INTRO_SKIP = 60, LEARN_MARGIN = 4, AUTO_NEXT = 10;
+// SKIP_HIDE: „Intro/Rückblick überspringen“ verschwindet nach 10 s, ▲▼ holt den Button zurück
+const INTRO_WINDOW = 300, INTRO_SKIP = 60, LEARN_MARGIN = 4, AUTO_NEXT = 10, SKIP_HIDE = 10000;
 let skipKind = null, skipSeg = null, skipTimer = null, skipShownAt = 0, autoTimer = null, autoLeft = 0;
 const outroLen = d => Math.max(60, Math.min(150, d * 0.04));
 /** Schlüssel zum Lernen: TMDB-Serie, sonst Anbieter-Serie. */
@@ -1798,7 +1814,7 @@ async function loadSegments(v) {
 function showSkip(seg) {
   const b = $('#pSkip');
   skipSeg = seg; skipKind = seg.kind; skipShownAt = Date.now();
-  const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length && seg.target == null;
+  const next = seg.kind === 'outro' && vod && !vod.ep.movie && vod.idx + 1 < vod.list.length && seg.target == null;
   b.innerHTML = seg.kind === 'intro' ? (seg.src === 'auto' ? 'Intro überspringen <span>⏩</span>' : 'Intro überspringen <span>⏭</span>')
     : seg.kind === 'recap' ? 'Rückblick überspringen <span>⏭</span>'
     : next ? nextLabel(AUTO_NEXT) : 'Abspann überspringen <span>⏭</span>';
@@ -1807,7 +1823,8 @@ function showSkip(seg) {
   if (vod && VC.zone !== 'btns' && !SC.on) VC.zone = 'skip';
   if (vod) renderVosd();
   clearTimeout(skipTimer);
-  if (seg.timeout) skipTimer = setTimeout(() => { if (vod) vod.used[seg.kind] = true; hideSkip(); }, seg.timeout);
+  // Intro/Rückblick: nie automatisch springen – nur ausblenden (▲▼ zeigt ihn wieder)
+  if (seg.kind !== 'outro') skipTimer = setTimeout(() => { if (vod && skipSeg === seg) { vod.hid[seg.kind] = true; hideSkip(); } }, SKIP_HIDE);
   clearInterval(autoTimer);
   if (next) startAutoNext(seg);
 }
@@ -1832,9 +1849,20 @@ function hideSkip() {
 function checkSkip() {
   if (!vod || menuOpen || !vod.segReady) return;
   const t = video.currentTime || 0;
-  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind]).sort((a, b) => b.from - a.from)[0] || null;
+  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind] && !vod.hid[s.kind]).sort((a, b) => b.from - a.from)[0] || null;
   if (cur && skipSeg !== cur) showSkip(cur);
   else if (!cur && skipSeg) hideSkip();
+}
+/** ▲▼: ausgeblendeten „Intro/Rückblick überspringen“-Button wieder einblenden. true = wieder da. */
+function reshowSkip() {
+  if (!vod || !vod.segReady || skipSeg) return false;
+  const t = video.currentTime || 0;
+  const seg = vod.segs.find(s => s.kind !== 'outro' && vod.hid[s.kind] && !vod.used[s.kind] && t >= s.from && t < s.to - 1);
+  if (!seg) return false;
+  delete vod.hid[seg.kind];
+  showSkip(seg);
+  VC.zone = 'skip';
+  return true;
 }
 function seekTo(abs) {
   dbg('seekTo', Math.round(abs), 'dur', video.duration, 'seeking', video.seeking);
@@ -2252,6 +2280,7 @@ function playerKey(e) {
   if (skipKind && ['Enter', ' '].includes(k) && (!vod || VC.zone === 'skip')) { e.preventDefault(); doSkip(); return; }
   if (vod && k !== 'ContextMenu' && k !== 'm' && k !== 'M') {
     if (['Escape', 'Backspace', 'GoBack', 'BrowserBack'].includes(k) && !SC.on) { e.preventDefault(); closePlayer(); return; }
+    if ((k === 'ArrowUp' || k === 'ArrowDown') && !SC.on && reshowSkip()) { e.preventDefault(); vod.touched = true; showOsd(); return; }
     if (vodKey(e)) { e.preventDefault(); vod && (vod.touched = true); checkSkip(); return; }
   }
   if (k === 'ContextMenu' || k === 'm' || k === 'M') { e.preventDefault(); openMenu(); return; }
@@ -2489,8 +2518,17 @@ function navigate(dir) {
   };
   const c = rectOf(cur);
   const ccx = (c.left + c.right) / 2, ccy = (c.top + c.bottom) / 2;
+  // Suche: ▲▼ innerhalb der Ergebnisse bleibt in den Ergebnissen (Sender ↔ Serien ↔ Filme),
+  // statt in die Tastatur links zu springen
+  let pool0 = all;
+  const res = vert && !sheetOpen && cur.closest('.search-res');
+  if (res) {
+    const inRes = all.filter(el => res.contains(el));
+    const ahead = inRes.some(el => { const r = el.getBoundingClientRect(); return dir === 'ArrowUp' ? r.bottom <= c.top + 2 : r.top >= c.bottom - 2; });
+    if (ahead) pool0 = inRes;
+  }
   const cands = [];
-  for (const el of all) {
+  for (const el of pool0) {
     if (el === cur) continue;
     const r = rectOf(el);
     const rcx = (r.left + r.right) / 2, rcy = (r.top + r.bottom) / 2;
@@ -2546,6 +2584,11 @@ document.addEventListener('keydown', e => {
   if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && a && a.closest && a.closest('.tabbar') && !sheetOpen) {
     const tabs = $$('.tabbar [data-view]'), nx = tabs[tabs.indexOf(a) + (e.key === 'ArrowRight' ? 1 : -1)];
     if (nx) { e.preventDefault(); show(nx.dataset.view); return; }
+  }
+  // Billboard (Top-Empfehlungen): ◀ am ersten / ▶ am letzten Button blättert durch die Titel
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && a && a.closest && a.closest('#heroContent') && heroItems.length > 1 && !sheetOpen) {
+    const btns = $$('#heroContent .focusable'), i = btns.indexOf(a), right = e.key === 'ArrowRight';
+    if (right ? i === btns.length - 1 : i === 0) { e.preventDefault(); if (!e.repeat || Date.now() - heroFlipAt > 350) heroFlip(right ? 1 : -1, a); return; }
   }
   if (WLM.on) {
     e.preventDefault();
