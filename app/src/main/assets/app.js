@@ -1717,7 +1717,7 @@ NV.ev = (type, pos, dur, paused, msg) => {
     const au = NV.tracks.filter(t => t.type === 'audio');
     if (au.length && !au.some(t => t.ok)) toast('Tonspur wird von diesem Gerät nicht unterstützt');
     applyTrackPref();
-    if (menuOpen) renderMenu();
+    if (menuOpen && menuMode === 'tracks') renderMenu();
     return;
   }
   video.dispatchEvent(new Event(type));
@@ -2021,6 +2021,13 @@ async function fillNext() {
 // SKIP_HIDE: „Intro/Rückblick überspringen“ verschwindet nach 10 s, ▲▼ holt den Button zurück
 const INTRO_WINDOW = 300, INTRO_SKIP = 60, LEARN_MARGIN = 4, AUTO_NEXT = 10, SKIP_HIDE = 10000;
 let skipKind = null, skipSeg = null, skipTimer = null, skipShownAt = 0, autoTimer = null, autoLeft = 0;
+/* Wiedergabe-Einstellungen (Zahnrad im Player): off = ausgeblendet, show = Button, auto = automatisch */
+const PS = {
+  KEY: 'streamtv.playback', p: null,
+  get() { if (!this.p) { try { this.p = { intro: 'show', next: 'auto', ...JSON.parse(localStorage.getItem(this.KEY) || '{}') }; } catch (e) { this.p = { intro: 'show', next: 'auto' }; } } return this.p; },
+  set(k, v) { this.get()[k] = v; try { localStorage.setItem(this.KEY, JSON.stringify(this.p)); } catch (e) {} }
+};
+const segMode = seg => PS.get()[seg.kind === 'outro' ? 'next' : 'intro'];
 const outroLen = d => Math.max(60, Math.min(150, d * 0.04));
 /** Schlüssel zum Lernen: TMDB-Serie, sonst Anbieter-Serie. */
 const serKey = v => !v || v.ep.movie ? null : v.ctx && v.ctx.tmdb ? v.ctx.tmdb : v.ctx && v.ctx.acc ? 'xs:' + v.ctx.acc + '|' + v.ctx.sid : 'show:' + v.show;
@@ -2048,10 +2055,17 @@ async function loadSegments(v) {
 function showSkip(seg) {
   const b = $('#pSkip');
   skipSeg = seg; skipKind = seg.kind; skipShownAt = Date.now();
+  // Automatisch überspringen – nur mit bekanntem Ende (TheIntroDB/gelernt), nie bei der Faustregel
+  if (seg.kind !== 'outro' && seg.src !== 'auto' && segMode(seg) === 'auto') {
+    toast(seg.kind === 'intro' ? 'Intro übersprungen' : 'Rückblick übersprungen');
+    doSkip(true);
+    return;
+  }
   const next = seg.kind === 'outro' && vod && !vod.ep.movie && vod.idx + 1 < vod.list.length && seg.target == null;
-  b.innerHTML = seg.kind === 'intro' ? (seg.src === 'auto' ? 'Intro überspringen <span>⏩</span>' : 'Intro überspringen <span>⏭</span>')
-    : seg.kind === 'recap' ? 'Rückblick überspringen <span>⏭</span>'
-    : next ? nextLabel(AUTO_NEXT) : 'Abspann überspringen <span>⏭</span>';
+  const autoNext = next && segMode(seg) === 'auto';
+  b.innerHTML = seg.kind === 'intro' ? 'Intro überspringen'
+    : seg.kind === 'recap' ? 'Rückblick überspringen'
+    : next ? (autoNext ? nextLabel(AUTO_NEXT) : 'Nächste Folge') : 'Abspann überspringen';
   b.dataset.src = seg.src;
   b.classList.remove('hidden');
   if (vod && VC.zone !== 'btns' && !SC.on) VC.zone = 'skip';
@@ -2060,9 +2074,9 @@ function showSkip(seg) {
   // Intro/Rückblick: nie automatisch springen – nur ausblenden (▲▼ zeigt ihn wieder)
   if (seg.kind !== 'outro') skipTimer = setTimeout(() => { if (vod && skipSeg === seg) { vod.hid[seg.kind] = true; hideSkip(); } }, SKIP_HIDE);
   clearInterval(autoTimer);
-  if (next) startAutoNext(seg);
+  if (autoNext) startAutoNext(seg);
 }
-const nextLabel = n => `Nächste Folge in ${n} s <span>▶</span>`;
+const nextLabel = n => `Nächste Folge in ${n} s`;
 /** Auto-Play: „Nächste Folge“ nach AUTO_NEXT Sekunden selbst auslösen (pausiert mit dem Video). */
 function startAutoNext(seg) {
   autoLeft = AUTO_NEXT;
@@ -2083,7 +2097,7 @@ function hideSkip() {
 function checkSkip() {
   if (!vod || menuOpen || !vod.segReady) return;
   const t = video.currentTime || 0;
-  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind] && !vod.hid[s.kind]).sort((a, b) => b.from - a.from)[0] || null;
+  const cur = vod.segs.filter(s => t >= s.from && t < s.to - 1 && !vod.used[s.kind] && !vod.hid[s.kind] && segMode(s) !== 'off').sort((a, b) => b.from - a.from)[0] || null;
   if (cur && skipSeg !== cur) showSkip(cur);
   else if (!cur && skipSeg) hideSkip();
 }
@@ -2091,7 +2105,7 @@ function checkSkip() {
 function reshowSkip() {
   if (!vod || !vod.segReady || skipSeg) return false;
   const t = video.currentTime || 0;
-  const seg = vod.segs.find(s => s.kind !== 'outro' && vod.hid[s.kind] && !vod.used[s.kind] && t >= s.from && t < s.to - 1);
+  const seg = vod.segs.find(s => s.kind !== 'outro' && segMode(s) !== 'off' && vod.hid[s.kind] && !vod.used[s.kind] && t >= s.from && t < s.to - 1);
   if (!seg) return false;
   delete vod.hid[seg.kind];
   showSkip(seg);
@@ -2130,7 +2144,7 @@ function noteOutro(v) {
   if (P / d >= 0.85 && off >= 15 && off <= 600) SK.learnOutro(serKey(v), off);
 }
 const dbg = (...a) => { try { console.log('[player]', ...a); } catch (e) {} };
-function doSkip() {
+function doSkip(quiet) {
   const seg = skipSeg;
   dbg('skip', seg && seg.kind, seg && seg.src, 'at', Math.round(video.currentTime || 0), 'nv', NV.on);
   hideSkip();
@@ -2140,7 +2154,7 @@ function doSkip() {
     const from = video.currentTime || 0, to = seg.target != null ? seg.target : from + INTRO_SKIP;
     seekTo(to);
     if (seg.kind === 'intro' && seg.src !== 'db') noteSeek(from, to, 'btn');
-    showOsd();
+    if (!quiet) showOsd();
     return;
   }
   // Abspann: zu spät erschienener Button → tatsächlichen Beginn lernen
@@ -2312,7 +2326,7 @@ const SC = { on: false, pos: 0, from: 0, holdStart: 0, last: 0, t: null };
 function vButtons() {
   const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length;
   $('#vNext').classList.toggle('hidden', !next);
-  return $$('#vosd .vb').filter(b => !b.classList.contains('hidden'));
+  return $$('#vosd .v-btns .vb').filter(b => !b.classList.contains('hidden'));
 }
 function renderVosd() {
   if (!vod) return;
@@ -2336,6 +2350,7 @@ function renderVosd() {
   if (VC.sel >= btns.length) VC.sel = btns.length - 1;
   btns.forEach((b, i) => b.classList.toggle('sel', VC.zone === 'btns' && i === VC.sel));
   $('#pSkip').classList.toggle('sel', VC.zone === 'skip' && !!skipKind);
+  $('#vSet').classList.toggle('sel', VC.zone === 'gear');
 }
 /** ◀▶: kurz = 10 s, gedrückt halten = immer schneller. Gesprungen wird erst beim Loslassen. */
 function scrubKey(dir, e) {
@@ -2377,6 +2392,7 @@ function vodButton(id) {
   else if (id === 'fwd') seek(10);
   else if (id === 'next') { zap(1); return; }
   else if (id === 'menu') { openMenu(); return; }
+  else if (id === 'set') { openMenu('play'); return; }
   setTimeout(renderVosd, 50);
 }
 /** Tasten im Serien-/Film-Player. true = verarbeitet. */
@@ -2392,6 +2408,7 @@ function vodKey(e) {
   if (VC.zone === 'skip') {   // „Intro überspringen“ ist ausgewählt
     if (k === 'ArrowLeft' || k === 'ArrowRight') { VC.zone = 'bar'; scrubKey(k === 'ArrowLeft' ? -1 : 1, e); }
     else if (k === 'ArrowDown') VC.zone = shown ? 'btns' : 'bar';
+    else if (k === 'ArrowUp' && shown) VC.zone = 'gear';
     if (k === 'ArrowDown' && VC.zone === 'btns') VC.sel = 0;
     showOsd();
     return true;
@@ -2403,11 +2420,14 @@ function vodKey(e) {
     showOsd();
     return true;
   }
-  if (VC.zone === 'bar') {
+  if (VC.zone === 'gear') {   // Zahnrad oben rechts
+    if (k === 'Enter' || k === ' ') { openMenu('play'); return true; }
+    if (k === 'ArrowDown') VC.zone = skipKind ? 'skip' : 'bar';
+  } else if (VC.zone === 'bar') {
     if (k === 'ArrowLeft' || k === 'ArrowRight') scrubKey(k === 'ArrowLeft' ? -1 : 1, e);
     else if (k === 'Enter' || k === ' ') { if (SC.on) scrubCommit(); else togglePlay(); }
     else if (k === 'ArrowDown') { scrubCommit(); VC.zone = 'btns'; VC.sel = 0; }
-    else if (k === 'ArrowUp' && skipKind && !SC.on) VC.zone = 'skip';
+    else if (k === 'ArrowUp' && !SC.on) VC.zone = skipKind ? 'skip' : 'gear';
   } else {
     const btns = vButtons();
     if (k === 'ArrowLeft') VC.sel = Math.max(0, VC.sel - 1);
@@ -2464,7 +2484,7 @@ video.addEventListener('ended', () => {
   if (!vod) return;
   saveVodPos();
   if (!vod.synced) syncWatched(vod);
-  if (vod.idx + 1 < vod.list.length) { toast('Nächste Folge'); openVod(vod.list, vod.idx + 1, vod.show, vod.ctx); }
+  if (!vod.ep.movie && vod.idx + 1 < vod.list.length && PS.get().next === 'auto') { toast('Nächste Folge'); openVod(vod.list, vod.idx + 1, vod.show, vod.ctx); }
   else closePlayer();
 });
 function closePlayer(fromPop) {
@@ -2671,8 +2691,48 @@ function applyTrackPref() {
   }
 }
 const canExternal = () => { try { return !!(bridge && typeof bridge.openExternal === 'function' && bridge.hasExternalPlayer()); } catch (e) { return false; } };
-let menuActs = [];
+let menuActs = [], menuMode = 'tracks';
+const PS_ROWS = [
+  { k: 'intro', label: 'Intro & Rückblick überspringen', desc: ['Kein Button', 'Button wird angezeigt', 'Wird automatisch übersprungen'] },
+  { k: 'next', label: 'Nächste Folge', desc: ['Kein Button, kein Auto-Play', 'Button ohne Countdown', 'Startet automatisch nach 10 s'] }
+];
+const PS_VALS = ['off', 'show', 'auto'], PS_NAMES = ['Aus', 'Anzeigen', 'Automatisch'];
+function renderSettings(focusIdx) {
+  const p = PS.get();
+  const rows = PS_ROWS.map((r, ri) => {
+    const i = Math.max(0, PS_VALS.indexOf(p[r.k]));
+    return `<button class="pm-item ps-row" data-ps="${ri}"><span class="ps-l">${r.label}</span>
+      <span class="ps-seg" style="--i:${i}"><i></i>${PS_NAMES.map((n, j) => `<span class="${j === i ? 'on' : ''}" data-pv="${j}">${n}</span>`).join('')}</span>
+      <span class="ps-d">${r.desc[i]}</span></button>`;
+  });
+  $('#pMenu').innerHTML = `<div class="pm-title">Wiedergabe</div>${rows.join('')}<button class="pm-item muted" data-pclose>Schließen</button>`;
+  const btns = $$('#pMenu .pm-item'), f = btns[Math.max(0, Math.min(btns.length - 1, focusIdx || 0))];
+  if (f) f.focus({ preventScroll: true });
+}
+function setPs(ri, j) {
+  const r = PS_ROWS[ri];
+  PS.set(r.k, PS_VALS[(j + 3) % 3]);
+  renderSettings(ri);
+  if (vod) { hideSkip(); delete vod.hid.intro; delete vod.hid.recap; }   // greift sofort, sobald das Menü zu ist
+}
+function settingsKey(e) {
+  const k = e.key, btns = $$('#pMenu .pm-item'), i = btns.indexOf(document.activeElement);
+  e.preventDefault();
+  if (['Escape', 'Backspace', 'GoBack', 'BrowserBack', 'ContextMenu', 'm', 'M'].includes(k)) return closeMenu();
+  if (k === 'ArrowDown' || k === 'ArrowUp') {
+    const n = btns[Math.max(0, Math.min(btns.length - 1, (i < 0 ? 0 : i + (k === 'ArrowDown' ? 1 : -1))))];
+    if (n) n.focus({ preventScroll: true });
+    return;
+  }
+  const b = document.activeElement, ri = b && b.dataset.ps != null ? Number(b.dataset.ps) : -1;
+  if (ri < 0) { if (k === 'Enter' || k === ' ') closeMenu(); return; }
+  const cur = PS_VALS.indexOf(PS.get()[PS_ROWS[ri].k]);
+  if (k === 'ArrowLeft') { if (cur > 0) setPs(ri, cur - 1); }
+  else if (k === 'ArrowRight') { if (cur < 2) setPs(ri, cur + 1); }
+  else if (k === 'Enter' || k === ' ') setPs(ri, cur + 1);   // OK klickt reihum durch
+}
 function renderMenu(focusIdx) {
+  if (menuMode === 'play') return renderSettings(focusIdx);
   const t = getTracks(), rows = [];
   menuActs = [];
   const item = (label, sel, fn, cls = '') => { menuActs.push(fn); return `<button class="pm-item ${sel ? 'sel' : ''} ${cls}" data-pm="${menuActs.length - 1}"><span class="ck">${sel ? '✓' : ''}</span><span>${esc(label)}</span></button>`; };
@@ -2699,9 +2759,10 @@ function renderMenu(focusIdx) {
   const f = btns[Math.max(0, Math.min(btns.length - 1, focusIdx == null ? btns.findIndex(b => b.classList.contains('sel')) : focusIdx))] || btns[0];
   if (f) { f.focus({ preventScroll: true }); f.scrollIntoView({ block: 'nearest' }); }
 }
-function openMenu() {
+function openMenu(mode) {
   if (menuOpen) return;
   menuOpen = true;
+  menuMode = mode === 'play' ? 'play' : 'tracks';
   pushOverlay('pmenu');
   $('#pMenu').classList.remove('hidden');
   $('#osd').classList.add('hide'); $('#vosd').classList.add('hide');
@@ -2715,6 +2776,7 @@ function closeMenu(fromPop) {
   if (!fromPop) popOverlay('pmenu');
 }
 function menuKey(e) {
+  if (menuMode === 'play') return settingsKey(e);
   const k = e.key, btns = $$('#pMenu .pm-item'), i = btns.indexOf(document.activeElement);
   e.preventDefault();
   if (['Escape', 'Backspace', 'GoBack', 'BrowserBack', 'ContextMenu', 'ArrowLeft', 'm', 'M'].includes(k)) return closeMenu();
@@ -2739,7 +2801,14 @@ function openExternalPlayer() {
   saveVodPos();
   if (!bridge.openExternal(url, title, pos)) toast('Kein anderer Player gefunden');
 }
-$('#pMenu').addEventListener('click', e => { const b = e.target.closest('[data-pm]'); if (!b) return; const fn = menuActs[Number(b.dataset.pm)]; closeMenu(); if (fn) fn(); });
+$('#pMenu').addEventListener('click', e => {
+  if (menuMode !== 'play') return;
+  e.stopPropagation();
+  const r = e.target.closest('[data-ps]'), v = e.target.closest('[data-pv]');
+  if (r) setPs(Number(r.dataset.ps), v ? Number(v.dataset.pv) : PS_VALS.indexOf(PS.get()[PS_ROWS[Number(r.dataset.ps)].k]) + 1);
+  else if (e.target.closest('[data-pclose]')) closeMenu();
+});
+$('#pMenu').addEventListener('click', e => { if (menuMode === 'play') return; const b = e.target.closest('[data-pm]'); if (!b) return; const fn = menuActs[Number(b.dataset.pm)]; closeMenu(); if (fn) fn(); });
 
 /* ================= Navigation per Fernbedienung ================= */
 function navigate(dir) {

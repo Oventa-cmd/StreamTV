@@ -648,6 +648,21 @@ html.nv #video{visibility:hidden}
 .vb.sel{background:#fff;color:#000;transform:scale(1.1)}
 .vb.hidden{display:none}
 #vosd:not(.hide) ~ .skip{bottom:8.6rem}
+.v-top{position:absolute;top:1.2rem;right:var(--pad);pointer-events:auto}
+.vosd::after{content:"";position:absolute;left:0;right:0;top:0;height:7rem;background:linear-gradient(to bottom,rgba(0,0,0,.45),transparent);pointer-events:none;z-index:-1}
+#vSet svg{width:1.5rem;height:1.5rem;transition:transform .5s var(--ease)}
+#vSet.sel svg{transform:rotate(60deg)}
+/* Wiedergabe-Einstellungen: 3-stufiger Schieberegler */
+.ps-row{flex-direction:column;align-items:stretch;gap:.45rem;padding:.75rem .7rem}
+.ps-l{font-size:.92rem}
+.ps-seg{position:relative;display:grid;grid-template-columns:repeat(3,1fr);padding:.2rem;border-radius:999px;background:rgba(255,255,255,.1)}
+.ps-seg i{position:absolute;top:.2rem;bottom:.2rem;left:.2rem;width:calc((100% - .4rem) / 3);border-radius:999px;background:rgba(255,255,255,.26);transform:translateX(calc(var(--i) * 100%));transition:transform .35s var(--spring),background .2s}
+.ps-seg span{position:relative;text-align:center;padding:.38rem 0;font-size:.78rem;font-weight:700;color:var(--mut)}
+.ps-seg span.on{color:#fff}
+.ps-d{font-size:.76rem;font-weight:500;color:var(--mut2)}
+.ps-row:focus{background:rgba(255,255,255,.1);color:var(--txt)}
+.ps-row:focus .ps-seg i{background:#fff}
+.ps-row:focus .ps-seg span.on{color:#000}
 #player:has(#vosd:not(.hide)) .nv-cue{bottom:26%}
 
 /* ---------- Folgenauswahl (Netflix-Stil) ---------- */
