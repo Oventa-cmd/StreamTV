@@ -1,5 +1,5 @@
 /* =====================================================================
-   StreamTV – Cloud-Sync über das Watchlist-Konto (Supabase, Tabelle streamtv_sync)
+   StreamTV – Cloud-Sync über das StreamTV-Konto (account.js, Tabelle „store“)
    Synchronisiert: Weiterschauen-Fortschritt, Favoriten, Zuletzt gesehen, Einstellungen,
    gelernte Intro-Marken, Tonspur-Wahl, Sport-Erinnerungen.
    NICHT synchronisiert: IPTV-Zugänge (Server, Benutzer, Passwort) und Kanallisten.
@@ -87,14 +87,14 @@ const SYNC = {
     this.timer = setTimeout(() => this.run(false), delay);
   },
   async api(method, path, body) {
-    return WL.http(method, '/rest/v1/streamtv_sync' + path, body);
+    return ACC.http(method, '/rest/v1/store' + path, body);
   },
   /** Abgleich: holen, zusammenführen, eigene Änderungen hochladen. */
   async run(forcePull = true) {
-    if (this.busy || !WL.connected) return false;
+    if (this.busy || !ACC.connected) return false;
     this.busy = true;
     try {
-      if (!await WL.ensureToken()) return false;
+      if (!await ACC.ensureToken()) return false;
       const M = this.meta();
       const pullDue = forcePull || Date.now() - (M.pulledAt || 0) > 120000;
       const changed = new Set(), push = new Set();

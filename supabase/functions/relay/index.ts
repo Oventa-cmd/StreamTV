@@ -1,6 +1,6 @@
-// Proxy für die Web-Version von StreamTV (iPad, Laptop): holt Xtream-API, EPG und M3U-Listen
-// stellvertretend ab – Safari blockiert diese Abfragen sonst (CORS, IPTV-Kennung).
-// Nur für angemeldete Watchlist-Konten. Videos laufen NICHT hierüber, sondern direkt zum Anbieter.
+// Weiterleitung für die Browser-Version: holt API-, EPG- und Listen-Abfragen stellvertretend ab
+// (Browser blockieren sie sonst: CORS, Kennung).
+// Nur für angemeldete Konten. Videos laufen NICHT hierüber, sondern direkt zur Quelle.
 // Die Ziel-Adresse (enthält Benutzer und Passwort) kommt im verschlüsselten POST-Inhalt,
 // nie in der URL – so taucht sie in keinem Log auf. Es wird nichts protokolliert oder gespeichert.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -48,7 +48,7 @@ async function authorized(req: Request): Promise<boolean> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return err("POST erwartet", 405);
-  if (!await authorized(req)) return err("Watchlist-Anmeldung nötig", 401);
+  if (!await authorized(req)) return err("Anmeldung nötig", 401);
 
   let target: URL;
   try { target = new URL(String((await req.json()).url ?? "")); } catch { return err("url fehlt", 400); }

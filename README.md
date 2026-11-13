@@ -36,17 +36,28 @@ IPTV-Player für Fire TV / Android TV im Apple-Stil (WebView-App, Oberfläche li
 - ProtonVPN-Anbindung (Autostart, „nur mit VPN abspielen“)
 - **App-Update:** prüft höchstens alle 12 h die neueste GitHub-Version; unter „Einstellungen → App-Update“ lässt sie sich direkt in der App laden und installieren (einmalig „Unbekannte Apps installieren“ erlauben), alternativ per ADB
 
+## Konto (alle Geräte)
+
+Beim ersten Start fragt jedes Gerät (TV, iPad, Laptop) nach **Benutzername und Passwort**; danach bleibt es angemeldet.
+Neues Konto: „Neues Konto erstellen“ + Einladungscode (Supabase-Funktion `gate`, im Code steht nur der SHA-256 des Codes).
+
+Im Konto liegen:
+- Weiterschauen (Folge + Sekunde), Favoriten, Zuletzt gesehen, Einstellungen … (Tabelle `store`, nur für das eigene Konto lesbar)
+- **Quellen samt Xtream-Zugangsdaten und der Watchlist-Zugang – Ende-zu-Ende-verschlüsselt** (AES-GCM 256, Schlüssel per PBKDF2 aus dem Konto-Passwort). Der Server speichert nur Chiffretext.
+
+Auf einem neuen Gerät reicht also die Anmeldung: Quellen werden geladen, die Watchlist meldet sich an, Fortschritt ist da.
+„Abmelden“ (Einstellungen → Konto) entfernt alle StreamTV-Daten vom Gerät; im Konto bleibt alles erhalten.
+
 ## Web-Version (iPad, Laptop)
 
 Dieselbe Oberfläche läuft als Web-App unter **https://oventa-cmd.github.io/StreamTV/** (jeder Push auf `main` aktualisiert sie, Workflow `pages.yml`).
 
 1. Seite öffnen (iPad: Safari → Teilen → **„Zum Home-Bildschirm“**, dann startet sie wie eine App im Vollbild)
-2. Einstellungen → Serien-Empfehlungen: mit dem **Watchlist-Konto** anmelden
-3. Einstellungen → Quelle hinzufügen: Xtream-Zugang eintragen (bleibt nur auf diesem Gerät)
+2. Mit dem Konto anmelden – fertig (Quellen, Watchlist und Fortschritt kommen aus dem Konto)
 
-Danach kommen Weiterschauen-Fortschritt (Folge + Sekunde), Favoriten, Zuletzt gesehen und Einstellungen automatisch per Cloud-Sync vom Fernseher – und umgekehrt.
+Die Seite ist neutral gehalten (Titel/App-Name „Portal“, neutrales Symbol, `noindex` für Suchmaschinen, vor der Anmeldung nur ein schlichtes Login).
 
-**Technik:** Xtream-API, EPG und M3U-Listen laufen über die Supabase-Funktion `xtream-proxy` (Quelltext in `supabase/functions/xtream-proxy`), weil Browser sie sonst blockieren (CORS, IPTV-Kennung). Nur angemeldete Watchlist-Konten dürfen sie nutzen; Videos laufen **nicht** darüber, sondern direkt vom Anbieter. Safari spielt HLS mit dem eingebauten Player; Live-Sender werden im Browser automatisch als `.m3u8` abgerufen.
+**Technik:** Xtream-API, EPG und M3U-Listen laufen über die Supabase-Funktion `relay` (Quelltext in `supabase/functions/relay`), weil Browser sie sonst blockieren (CORS, IPTV-Kennung). Nur angemeldete Konten dürfen sie nutzen; Videos laufen **nicht** darüber, sondern direkt vom Anbieter. Safari spielt HLS mit dem eingebauten Player; Live-Sender werden im Browser automatisch als `.m3u8` abgerufen.
 
 **Datenschutz:** Die Anbieter-Adresse mit Benutzer/Passwort geht nur im verschlüsselten Inhalt an den Proxy (nie in der URL, keine Logs). Optional unter Einstellungen → Datenschutz: **PIN-Schutz** – alle StreamTV-Daten des Geräts (Zugang, Kanäle, Watchlist-Sitzung, Fortschritt) liegen dann nur verschlüsselt vor (gzip + AES-GCM 256, Schlüssel per PBKDF2-SHA256 aus der PIN, 600.000 Runden). Entsperrt nur im Sitzungsspeicher; sperrt beim Schließen und nach 15 Min. im Hintergrund. Gilt für TV-App und Web gleichermaßen. Je länger die PIN, desto sicherer.
 
@@ -108,10 +119,10 @@ adb push streamtv-backup.json /sdcard/Android/data/de.oventa.streamtv/files/
 adb shell am start -n de.oventa.streamtv/.MainActivity --es backup import
 ```
 
-## Cloud-Sync über das Watchlist-Konto
+## Cloud-Sync über das Konto
 
-Mit angemeldetem Watchlist-Konto gleicht StreamTV automatisch ab (Tabelle `streamtv_sync`, nur für das eigene Konto lesbar): Weiterschauen-Fortschritt, Favoriten, Zuletzt gesehen, Einstellungen (außer „Effekte reduzieren“, VPN- und Player-Einstellungen), gelernte Intro-Marken, Tonspur-Wahl und Sport-Erinnerungen.
-**Nicht** synchronisiert werden IPTV-Zugänge und Kanallisten. Server, Benutzer und Passwort in Stream-Adressen werden vor dem Hochladen durch Platzhalter ersetzt und auf dem anderen Gerät mit dessen eigenem Zugang wieder eingesetzt.
+Mit angemeldetem Konto gleicht StreamTV automatisch ab (Tabelle `store`, nur für das eigene Konto lesbar): Weiterschauen-Fortschritt, Favoriten, Zuletzt gesehen, Einstellungen (außer „Effekte reduzieren“, VPN- und Player-Einstellungen), gelernte Intro-Marken, Tonspur-Wahl und Sport-Erinnerungen.
+Quellen und Zugänge laufen separat und Ende-zu-Ende-verschlüsselt (siehe „Konto“); Kanallisten lädt jedes Gerät selbst. Server, Benutzer und Passwort in Stream-Adressen werden vor dem Hochladen durch Platzhalter ersetzt und auf dem anderen Gerät mit dessen eigenem Zugang wieder eingesetzt.
 Abgleich beim Start, beim Zurückkehren in die App, nach Änderungen (20 s verzögert) und beim Verlassen der App.
 
 ## Claude-Suche & Spracheingabe

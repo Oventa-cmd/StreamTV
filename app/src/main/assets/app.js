@@ -103,7 +103,7 @@ async function getText(url, ms = 90000) {
   let r;
   try { r = await request('GET', url, { timeout: ms }); }
   catch (e) {
-    if (/Watchlist/.test(e.message)) throw e;   // Browser-Version: Hinweis aus web.js durchreichen
+    if (/[Aa]nmeld/.test(e.message)) throw e;   // Browser-Version: Hinweis aus web.js durchreichen
     throw new Error(e.message === 'Zeitüberschreitung'
       ? 'Zeitüberschreitung – Server antwortet nicht.' + vpnHint()
       : 'Server nicht erreichbar – Adresse und Port prüfen (z. B. http://server.tv:8080).' + vpnHint());

@@ -18,19 +18,19 @@ const WEBX = window.StreamTVApp ? null : (() => {
 
   // Diese Dienste erlauben Browser-Zugriffe selbst – alles andere (IPTV-Anbieter) über den Proxy
   const DIRECT = /(^|\.)(supabase\.co|themoviedb\.org|tmdb\.org|theintrodb\.org|github\.com|githubusercontent\.com|openligadb\.de|thesportsdb\.com|jolpi\.ca|pulselive\.com|mux\.dev)$/i;
-  const PROXY = '/functions/v1/xtream-proxy';
+  const PROXY = '/functions/v1/relay';
 
   const direct = request;   // aus tmdb.js
   async function viaProxy(url, opts) {
-    if (!WL.connected) throw new Error('Für die Web-Version zuerst unter Einstellungen mit dem Watchlist-Konto anmelden.');
-    if (!await WL.ensureToken()) throw new Error('Watchlist-Anmeldung abgelaufen – bitte neu anmelden.');
+    if (!ACC.connected) throw new Error('Bitte zuerst anmelden.');
+    if (!await ACC.ensureToken()) throw new Error('Anmeldung abgelaufen – bitte neu anmelden.');
     // Zieladresse (mit Benutzer/Passwort) nur im verschlüsselten Inhalt, nie in der URL
     const r = await direct('POST', WL.URL + PROXY, {
-      headers: { apikey: WL.KEY, Authorization: 'Bearer ' + WL.s.access, 'Content-Type': 'application/json' },
+      headers: { apikey: ACC.KEY, Authorization: 'Bearer ' + ACC.s.access, 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
       timeout: opts.timeout || 90000
     });
-    if (r.status === 401 && /Watchlist/.test(r.text)) throw new Error('Watchlist-Anmeldung abgelaufen – bitte neu anmelden.');
+    if (r.status === 401 && /Anmeldung/.test(r.text)) throw new Error('Anmeldung abgelaufen – bitte neu anmelden.');
     return r;
   }
   // request() aus tmdb.js ersetzen: gleiche Schnittstelle, Anbieter-Adressen über den Proxy
@@ -82,9 +82,9 @@ const WEBX = window.StreamTVApp ? null : (() => {
     const set = $('#view-settings .settings');
     if (set && !$('#webNote')) {
       set.querySelector('.large-title').insertAdjacentHTML('afterend',
-        `<div class="web-note" id="webNote"><b>Browser-Version</b><span>Melde dich unten bei „Serien-Empfehlungen“ mit deinem Watchlist-Konto an und füge danach deinen Xtream-Zugang hinzu. Fortschritt und Favoriten kommen automatisch vom Fernseher.</span></div>`);
+        `<div class="web-note" id="webNote"><b>Browser-Version</b><span>Füge unter „Meine Quellen“ deinen Xtream-Zugang hinzu – er wird verschlüsselt in deinem Konto gespeichert und steht danach auf allen Geräten bereit.</span></div>`);
     }
-    const note = () => { const n = $('#webNote'); if (n) n.classList.toggle('hidden', WL.connected && (state.sources || []).length > 0); };
+    const note = () => { const n = $('#webNote'); if (n) n.classList.toggle('hidden', (state.sources || []).length > 0); };
     note(); setInterval(note, 3000);
     // iPad/Safari: Ton-Wiedergabe braucht manchmal ein Antippen – dann nicht als Fehler werten
     if (typeof safePlay === 'function') {
