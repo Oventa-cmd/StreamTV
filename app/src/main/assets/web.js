@@ -43,19 +43,49 @@ const WEBX = window.StreamTVApp ? null : (() => {
 
   /** Live-Sender des Anbieters: im Browser immer als HLS (.m3u8) abrufen. */
   function streamUrl(url) {
+    clearBar();
     return String(url).replace(/(\/live\/[^/]+\/[^/]+\/\d+)\.ts(\?|$)/i, '$1.m3u8$2');
   }
-  /** Reihenfolge der Abspiel-Wege im Browser. */
+  // Safari (iPad/iPhone/Mac) kann kein MKV/AVI – Chrome & Co. meist schon (MKV)
+  const webkitOnly = iOS || (nativeHls && /Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR|Firefox/.test(ua));
+  /** Reihenfolge der Abspiel-Wege im Browser. alt-xyz = dieselbe Folge als .xyz beim Anbieter anfragen. */
   function engines(u) {
     if (u.endsWith('.m3u8')) return nativeHls ? ['native', 'hls'] : ['hls', 'native'];
-    if (/\.(mp4|m4v|mov|mkv|webm|avi)$/.test(u)) return ['native'];
+    if (/\.(mkv|avi)$/.test(u)) return webkitOnly ? ['alt-m3u8', 'alt-mp4'] : ['native', 'alt-m3u8', 'hls', 'alt-mp4'];
+    if (/\.(mp4|m4v|mov|webm)$/.test(u)) return ['native'];
     return null;
+  }
+  const alt = (url, ext) => String(url).replace(/\.(mkv|avi)(\?|$)/i, '.' + ext + '$2');
+
+  /* ---------- Fallback: externer Player (VLC / Infuse) ---------- */
+  function clearBar() { const b = document.getElementById('extBar'); if (b) b.remove(); }
+  function showBar(url) {
+    clearBar();
+    const p = document.getElementById('player');
+    if (!p) return;
+    const u = encodeURIComponent(url);
+    const btns = iOS
+      ? `<a class="btn" href="vlc-x-callback://x-callback-url/stream?url=${u}">In VLC öffnen</a>
+         <a class="btn" href="infuse://x-callback-url/play?url=${u}">In Infuse öffnen</a>`
+      : `<button class="btn" type="button" data-copy>Link für VLC kopieren</button>`;
+    p.insertAdjacentHTML('beforeend', `<div id="extBar">${btns}<button class="btn" type="button" data-retry>Erneut versuchen</button></div>`);
+    const bar = document.getElementById('extBar');
+    bar.addEventListener('click', e => {
+      e.stopPropagation();
+      if (e.target.closest('[data-retry]')) { clearBar(); try { retryNow(); } catch (x) {} }
+      if (e.target.closest('[data-copy]')) {
+        try { navigator.clipboard.writeText(url).then(() => toast('Link kopiert – in VLC: Medien → Netzwerkstream öffnen')); } catch (x) {}
+      }
+    });
   }
   function failHint(url) {
     const u = String(url).split('?')[0].toLowerCase();
-    if (/\.(mkv|avi)$/.test(u)) return iOS
-      ? 'Dieses Format (MKV/AVI) kann Safari nicht abspielen – auf dem TV oder in VLC ansehen'
-      : 'Dieses Format kann der Browser evtl. nicht abspielen – auf dem TV oder in VLC ansehen';
+    if (/\.(mkv|avi)$/.test(u)) {
+      showBar(url);
+      return webkitOnly
+        ? 'MKV kann Safari nicht abspielen, und der Anbieter bietet keine andere Variante an'
+        : 'Dieses Format kann der Browser nicht abspielen';
+    }
     if (location.protocol === 'https:' && /^http:/i.test(url)) return 'Unverschlüsselter Stream (http) wird vom Browser blockiert';
     return '';
   }
@@ -108,6 +138,6 @@ const WEBX = window.StreamTVApp ? null : (() => {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(setupUi, 0));
   else setTimeout(setupUi, 0);
 
-  return { iOS, touch, nativeHls, streamUrl, engines, failHint, fullscreen };
+  return { iOS, touch, nativeHls, webkitOnly, streamUrl, engines, alt, failHint, fullscreen };
 })();
 window.WEBX = WEBX;

@@ -806,3 +806,6 @@ html.ios input,html.ios textarea{font-size:max(16px,1rem)}   /* verhindert Zoom 
 html.web #swNative,html.web #swNativeLive{display:none}
 .settings .row-btn .lbl b,.settings .row-btn .lbl small{display:block}
 .settings .row-btn .lbl small{color:var(--mut);font-size:.8rem;font-weight:500;margin-top:.15rem}
+html.web #extBar{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);z-index:5;display:flex;gap:.7rem;flex-wrap:wrap;justify-content:center;max-width:92vw}
+html.web #extBar .btn{text-decoration:none;background:rgba(255,255,255,.16);color:#fff;padding:.8rem 1.3rem;border-radius:999px;font-weight:700;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+html.web #extBar .btn:first-child{background:#fff;color:#000}

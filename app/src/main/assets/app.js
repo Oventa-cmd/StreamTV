@@ -1791,6 +1791,10 @@ function startEngine(name, url, fail) {
     tsPlayer.attachMediaElement(video);
     tsPlayer.load();
     safePlay(tsPlayer);
+  } else if (name.startsWith('alt-') && window.WEBX) {   // Browser: andere Variante derselben Folge beim Anbieter (z. B. HLS statt MKV)
+    engine = 'native';
+    video.src = WEBX.alt(url, name.slice(4));
+    safePlay(video);
   } else {
     video.src = url;
     safePlay(video);

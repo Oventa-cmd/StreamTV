@@ -61,7 +61,9 @@ Die Seite ist neutral gehalten (Titel/App-Name „Portal“, neutrales Symbol, `
 
 **Datenschutz:** Die Anbieter-Adresse mit Benutzer/Passwort geht nur im verschlüsselten Inhalt an den Proxy (nie in der URL, keine Logs). Optional unter Einstellungen → Datenschutz: **PIN-Schutz** – alle StreamTV-Daten des Geräts (Zugang, Kanäle, Watchlist-Sitzung, Fortschritt) liegen dann nur verschlüsselt vor (gzip + AES-GCM 256, Schlüssel per PBKDF2-SHA256 aus der PIN, 600.000 Runden). Entsperrt nur im Sitzungsspeicher; sperrt beim Schließen und nach 15 Min. im Hintergrund. Gilt für TV-App und Web gleichermaßen. Je länger die PIN, desto sicherer.
 
-**Grenzen im Browser:** MKV/AVI-Folgen spielt Safari nicht ab (MP4/HLS schon). Kein Systemplayer, keine VPN-Steuerung, kein App-Update. Sperrt der Anbieter Browser-Wiedergabe, hilft nur die TV-App.
+**MKV im Browser:** Safari kann kein MKV. Die App fragt dann automatisch dieselbe Folge als HLS (`.m3u8`) bzw. MP4 beim Anbieter an; gibt es keine, erscheinen „In VLC öffnen“ / „In Infuse öffnen“ (iPad) bzw. „Link für VLC kopieren“ (Laptop).
+
+**Grenzen im Browser:** Kein Systemplayer, keine VPN-Steuerung, kein App-Update. Sperrt der Anbieter Browser-Wiedergabe, hilft nur die TV-App.
 
 ## Watchlist-Konto vom PC übertragen
 
