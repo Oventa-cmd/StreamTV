@@ -18,14 +18,16 @@ const WEBX = window.StreamTVApp ? null : (() => {
 
   // Diese Dienste erlauben Browser-Zugriffe selbst – alles andere (IPTV-Anbieter) über den Proxy
   const DIRECT = /(^|\.)(supabase\.co|themoviedb\.org|tmdb\.org|theintrodb\.org|github\.com|githubusercontent\.com|openligadb\.de|thesportsdb\.com|jolpi\.ca|pulselive\.com|mux\.dev)$/i;
-  const PROXY = '/functions/v1/xtream-proxy?url=';
+  const PROXY = '/functions/v1/xtream-proxy';
 
   const direct = request;   // aus tmdb.js
   async function viaProxy(url, opts) {
     if (!WL.connected) throw new Error('Für die Web-Version zuerst unter Einstellungen mit dem Watchlist-Konto anmelden.');
     if (!await WL.ensureToken()) throw new Error('Watchlist-Anmeldung abgelaufen – bitte neu anmelden.');
-    const r = await direct('GET', WL.URL + PROXY + encodeURIComponent(url), {
-      headers: { apikey: WL.KEY, Authorization: 'Bearer ' + WL.s.access },
+    // Zieladresse (mit Benutzer/Passwort) nur im verschlüsselten Inhalt, nie in der URL
+    const r = await direct('POST', WL.URL + PROXY, {
+      headers: { apikey: WL.KEY, Authorization: 'Bearer ' + WL.s.access, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
       timeout: opts.timeout || 90000
     });
     if (r.status === 401 && /Watchlist/.test(r.text)) throw new Error('Watchlist-Anmeldung abgelaufen – bitte neu anmelden.');

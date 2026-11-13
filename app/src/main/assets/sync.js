@@ -22,15 +22,16 @@ const SYNC = {
     this.m.mtime = this.m.mtime || {}; this.m.seen = this.m.seen || {};
     return this.m;
   },
-  saveMeta() { try { Storage.prototype._stvSet.call(localStorage, this.META, JSON.stringify(this.meta())); } catch (e) {} },
+  saveMeta() { try { localStorage._stvSet.call(localStorage, this.META, JSON.stringify(this.meta())); } catch (e) {} },
 
   /** Änderungen an synchronisierten Schlüsseln mitschreiben (nur echte Änderungen). */
   install() {
-    if (Storage.prototype._stvSet) return;
-    const orig = Storage.prototype.setItem;
-    Storage.prototype._stvSet = orig;
+    const T = localStorage.__vault ? localStorage : Storage.prototype;   // PIN-Tresor ersetzt localStorage (vault.js)
+    if (Object.prototype.hasOwnProperty.call(T, '_stvSet')) return;
+    const orig = T.setItem;
+    T._stvSet = orig;
     const self = this;
-    Storage.prototype.setItem = function (k, v) {
+    T.setItem = function (k, v) {
       const tracked = this === localStorage && !self.applying && self.KEYS.includes(k);
       const changed = tracked && this.getItem(k) !== String(v);
       orig.call(this, k, v);

@@ -1,13 +1,15 @@
 // Proxy für die Web-Version von StreamTV (iPad, Laptop): holt Xtream-API, EPG und M3U-Listen
 // stellvertretend ab – Safari blockiert diese Abfragen sonst (CORS, IPTV-Kennung).
 // Nur für angemeldete Watchlist-Konten. Videos laufen NICHT hierüber, sondern direkt zum Anbieter.
+// Die Ziel-Adresse (enthält Benutzer und Passwort) kommt im verschlüsselten POST-Inhalt,
+// nie in der URL – so taucht sie in keinem Log auf. Es wird nichts protokolliert oder gespeichert.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Expose-Headers": "x-upstream-status, x-final-url",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Expose-Headers": "x-upstream-status",
 };
 const err = (msg: string, status: number) =>
   new Response(JSON.stringify({ error: msg }), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -45,11 +47,11 @@ async function authorized(req: Request): Promise<boolean> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "GET") return err("GET erwartet", 405);
+  if (req.method !== "POST") return err("POST erwartet", 405);
   if (!await authorized(req)) return err("Watchlist-Anmeldung nötig", 401);
 
   let target: URL;
-  try { target = new URL(new URL(req.url).searchParams.get("url") ?? ""); } catch { return err("url fehlt", 400); }
+  try { target = new URL(String((await req.json()).url ?? "")); } catch { return err("url fehlt", 400); }
   if (!/^https?:$/.test(target.protocol) || blockedHost(target.hostname)) return err("Adresse nicht erlaubt", 400);
 
   let up: Response;
@@ -60,7 +62,7 @@ Deno.serve(async (req) => {
       signal: AbortSignal.timeout(90_000),
     });
   } catch (e) {
-    return err("Anbieter nicht erreichbar: " + (e instanceof Error ? e.message : String(e)), 502);
+    return err("Anbieter nicht erreichbar" + (e instanceof Error && e.name === "TimeoutError" ? " (Zeitüberschreitung)" : ""), 502);
   }
   const ct = up.headers.get("content-type") ?? "";
   // Videos gehören nicht hierher (Datenvolumen) – die Web-App spielt sie direkt ab
@@ -75,7 +77,6 @@ Deno.serve(async (req) => {
       "Content-Type": ct || "text/plain; charset=utf-8",
       "Cache-Control": "no-store",
       "x-upstream-status": String(up.status),
-      "x-final-url": up.url,
     },
   });
 });
