@@ -36,6 +36,20 @@ IPTV-Player für Fire TV / Android TV im Apple-Stil (WebView-App, Oberfläche li
 - ProtonVPN-Anbindung (Autostart, „nur mit VPN abspielen“)
 - **App-Update:** prüft höchstens alle 12 h die neueste GitHub-Version; unter „Einstellungen → App-Update“ lässt sie sich direkt in der App laden und installieren (einmalig „Unbekannte Apps installieren“ erlauben), alternativ per ADB
 
+## Web-Version (iPad, Laptop)
+
+Dieselbe Oberfläche läuft als Web-App unter **https://oventa-cmd.github.io/StreamTV/** (jeder Push auf `main` aktualisiert sie, Workflow `pages.yml`).
+
+1. Seite öffnen (iPad: Safari → Teilen → **„Zum Home-Bildschirm“**, dann startet sie wie eine App im Vollbild)
+2. Einstellungen → Serien-Empfehlungen: mit dem **Watchlist-Konto** anmelden
+3. Einstellungen → Quelle hinzufügen: Xtream-Zugang eintragen (bleibt nur auf diesem Gerät)
+
+Danach kommen Weiterschauen-Fortschritt (Folge + Sekunde), Favoriten, Zuletzt gesehen und Einstellungen automatisch per Cloud-Sync vom Fernseher – und umgekehrt.
+
+**Technik:** Xtream-API, EPG und M3U-Listen laufen über die Supabase-Funktion `xtream-proxy` (Quelltext in `supabase/functions/xtream-proxy`), weil Browser sie sonst blockieren (CORS, IPTV-Kennung). Nur angemeldete Watchlist-Konten dürfen sie nutzen; Videos laufen **nicht** darüber, sondern direkt vom Anbieter. Safari spielt HLS mit dem eingebauten Player; Live-Sender werden im Browser automatisch als `.m3u8` abgerufen.
+
+**Grenzen im Browser:** MKV/AVI-Folgen spielt Safari nicht ab (MP4/HLS schon). Kein Systemplayer, keine VPN-Steuerung, kein App-Update. Sperrt der Anbieter Browser-Wiedergabe, hilft nur die TV-App.
+
 ## Watchlist-Konto vom PC übertragen
 
 `tools/Watchlist-Anmelden.bat` doppelklicken (ADB nötig): fragt IP, E-Mail und Passwort ab und meldet StreamTV **und** den TV-Launcher an. Das Passwort wird auf dem Fire TV nicht gespeichert, nur die Sitzung.

@@ -1736,6 +1736,7 @@ function nvStop() {
 
 function enginesFor(url) {
   const u = url.split('?')[0].toLowerCase();
+  if (window.WEBX) { const w = WEBX.engines(u); if (w) return w; }   // Browser-Version (iPad, Laptop)
   if (u.endsWith('.m3u8')) return ['hls', 'ts'];
   if (u.endsWith('.ts')) return ['ts', 'hls'];
   if (/\.(mp4|mkv|webm|mov)$/.test(u)) return ['native'];
@@ -1803,6 +1804,7 @@ function loadStream(url, keep) {
   if (menuOpen) closeMenu();
   clearTimeout(RC.timer);
   RC.waiting = false; RC.dead = false;
+  if (window.WEBX) url = WEBX.streamUrl(url);
   if (!keep) Object.assign(RC, { url, played: false, tries: 0, rounds: 0, eng: null, resumeAt: 0 });
   RC.loadPlayed = false; RC.lastT = -1; RC.lastMove = Date.now();
   stopStream();
@@ -1839,7 +1841,7 @@ function streamFailed(url) {
   }
   stopStream();
   RC.dead = true;
-  setStatus('Stream nicht abspielbar – OK für neuen Versuch');
+  setStatus((window.WEBX && WEBX.failHint(url)) || 'Stream nicht abspielbar – OK für neuen Versuch');
 }
 function reconnect(reason) {
   if (!playerOpen || !RC.url || RC.waiting) return;
@@ -2393,6 +2395,8 @@ function vodButton(id) {
   else if (id === 'next') { zap(1); return; }
   else if (id === 'menu') { openMenu(); return; }
   else if (id === 'set') { openMenu('play'); return; }
+  else if (id === 'close') { closePlayer(); return; }
+  else if (id === 'fs') { if (window.WEBX) WEBX.fullscreen(); return; }
   setTimeout(renderVosd, 50);
 }
 /** Tasten im Serien-/Film-Player. true = verarbeitet. */
@@ -2697,7 +2701,7 @@ const PS_ROWS = [
   { k: 'next', label: 'Nächste Folge', desc: ['Kein Button, kein Auto-Play', 'Button ohne Countdown', 'Startet automatisch nach 10 s'] }
 ];
 const PS_VALS = ['off', 'show', 'auto'], PS_NAMES = ['Aus', 'Anzeigen', 'Automatisch'];
-function renderSettings(focusIdx) {
+function renderPlaySettings(focusIdx) {
   const p = PS.get();
   const rows = PS_ROWS.map((r, ri) => {
     const i = Math.max(0, PS_VALS.indexOf(p[r.k]));
@@ -2712,7 +2716,7 @@ function renderSettings(focusIdx) {
 function setPs(ri, j) {
   const r = PS_ROWS[ri];
   PS.set(r.k, PS_VALS[(j + 3) % 3]);
-  renderSettings(ri);
+  renderPlaySettings(ri);
   if (vod) { hideSkip(); delete vod.hid.intro; delete vod.hid.recap; }   // greift sofort, sobald das Menü zu ist
 }
 function settingsKey(e) {
@@ -2732,7 +2736,7 @@ function settingsKey(e) {
   else if (k === 'Enter' || k === ' ') setPs(ri, cur + 1);   // OK klickt reihum durch
 }
 function renderMenu(focusIdx) {
-  if (menuMode === 'play') return renderSettings(focusIdx);
+  if (menuMode === 'play') return renderPlaySettings(focusIdx);
   const t = getTracks(), rows = [];
   menuActs = [];
   const item = (label, sel, fn, cls = '') => { menuActs.push(fn); return `<button class="pm-item ${sel ? 'sel' : ''} ${cls}" data-pm="${menuActs.length - 1}"><span class="ck">${sel ? '✓' : ''}</span><span>${esc(label)}</span></button>`; };

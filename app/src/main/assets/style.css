@@ -785,3 +785,24 @@ body:not(.lite) .ctx-box{backdrop-filter:blur(30px);-webkit-backdrop-filter:blur
 .ctx-btn.cancel{color:rgba(255,255,255,.6);margin-top:.3rem}
 .ctx-btn.cancel:focus{color:#000}
 @keyframes ctxIn{from{opacity:0}to{opacity:1}}
+
+/* ============ Browser-Version (iPad, Laptop) – nur mit html.web ============ */
+html:not(.web) .web-fs{display:none}
+html.web .app-only{display:none}
+html.web header{padding-top:calc(.85rem + env(safe-area-inset-top));padding-left:max(var(--pad),env(safe-area-inset-left));padding-right:max(var(--pad),env(safe-area-inset-right))}
+html.web #vosd .v-top{display:flex;gap:.6rem;justify-content:flex-end;padding-top:env(safe-area-inset-top)}
+html.web #vosd .v-bottom{padding-bottom:max(1rem,env(safe-area-inset-bottom))}
+html.web .web-note{display:flex;flex-direction:column;gap:.3rem;margin:0 0 1.4rem;padding:1rem 1.2rem;border-radius:var(--r);
+  background:rgba(229,9,20,.14);border:1px solid rgba(229,9,20,.4);line-height:1.45}
+html.web .web-note span{color:var(--mut);font-size:.9rem}
+html.web .web-note.hidden{display:none}
+/* Touch: größere Tipp-Flächen, kein Hängenbleiben von Hover-Zoom */
+html.touch .vb{min-width:2.9rem;min-height:2.9rem}
+html.touch .osd-btns .btn,html.touch .row-btn,html.touch .switch{min-height:2.9rem}
+html.touch body{-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+html.touch input,html.touch textarea{-webkit-user-select:text;user-select:text}
+html.ios input,html.ios textarea{font-size:max(16px,1rem)}   /* verhindert Zoom beim Tippen */
+@media (hover:none){.tile:hover .art{transform:none}}
+html.web #swNative,html.web #swNativeLive{display:none}
+.settings .row-btn .lbl b,.settings .row-btn .lbl small{display:block}
+.settings .row-btn .lbl small{color:var(--mut);font-size:.8rem;font-weight:500;margin-top:.15rem}

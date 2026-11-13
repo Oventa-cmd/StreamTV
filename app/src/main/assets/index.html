@@ -2,7 +2,14 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="StreamTV" />
+<meta name="theme-color" content="#000000" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon-180.png" />
 <title>StreamTV</title>
 <link rel="stylesheet" href="style.css" />
 <script src="hls.min.js"></script>
@@ -135,10 +142,12 @@
     <div class="pad settings">
       <h1 class="large-title">Einstellungen</h1>
 
+      <div class="app-only">
       <!-- App-Update -->
       <div class="group-title">App-Update</div>
       <div class="group" id="updGroup"></div>
       <p class="group-foot" id="updFoot"></p>
+      </div>
 
       <!-- Quellen -->
       <div class="group-title">Meine Quellen</div>
@@ -194,6 +203,7 @@
       <div class="group" id="wlGroup"></div>
       <p class="group-foot">Mit deinem Serien-Watchlist-Konto bekommst du dieselben persönlichen Empfehlungen wie im TV-Launcher und kannst Serien direkt auf die Watchlist setzen. Alternativ reicht ein eigener TMDB-Schlüssel.</p>
 
+      <div class="app-only">
       <!-- VPN -->
       <div class="group-title">ProtonVPN</div>
       <div class="group">
@@ -202,6 +212,7 @@
         <button class="row-btn focusable" id="vpnOpen" type="button"><span>ProtonVPN jetzt öffnen</span><span class="chev">›</span></button>
       </div>
       <p class="group-foot" id="vpnFoot"></p>
+      </div>
 
       <!-- Inhalte -->
       <div class="group-title">Inhalte</div>
@@ -307,6 +318,7 @@
 
 <script src="sync.js"></script>
 <script src="tmdb.js"></script>
+<script src="web.js"></script>
 <script src="series.js"></script>
 <script src="epg.js"></script>
 <script src="skip.js"></script>
