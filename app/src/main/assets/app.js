@@ -250,12 +250,14 @@ function renderOsdEpg() {
   if (x) { $('#eNextT').textContent = hhmm(x.s); $('#eNext').textContent = x.t; }
 }
 function showTileHTML(p, rank) {
+  PVP[p.type + ':' + p.id] = p;
+  const ne = newEpOf(p);
   // Hochkant-Poster wie bei Netflix → deutlich mehr Titel pro Reihe; ohne Poster: Backdrop zugeschnitten + Titel
   const img = p.poster ? `${TM.IMG}w342${p.poster}` : p.backdrop ? `${TM.IMG}w780${p.backdrop}` : '';
   return `<div class="tile show poster focusable" tabindex="0" data-show="${p.type}:${p.id}">
     <div class="art">${img ? `<img class="cov" src="${img}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="ini">${esc(initials(p.title))}</span>`}
       ${p.poster ? '' : `<div class="shade"></div><div class="t">${esc(p.title)}</div>`}
-      ${rank ? `<span class="rank">${rank}</span>` : ''}</div>
+      ${rank ? `<span class="rank">${rank}</span>` : ''}${ne ? `<span class="nb">${esc(ne.label)}</span>` : ''}</div>
     <div class="caption">${esc(p.title)}</div>
     <div class="sub">${esc(p.reason || TM.info(p)) || '&nbsp;'}</div>
   </div>`;
@@ -664,6 +666,160 @@ function renderHero() {
   heroEnter(ready ? 'wait' : 'setup');
 }
 
+/* ================= Neue Folgen (Watchlist + TMDB) ================= */
+// Etikett auf Serien, die du schaust/gesehen hast, wenn in den letzten 30 Tagen eine Folge erschienen ist,
+// die laut Watchlist noch nicht gesehen ist. Grundlage: zuletzt ausgestrahlte Folge bei TMDB.
+const NEWEP = { at: 0, busy: false, DAYS: 30 };
+function newEpInfo(o, d) {
+  const last = d && d.last_episode_to_air, prog = o && o.progress;
+  if (!last || !last.air_date || !prog) return null;
+  const age = (Date.now() - Date.parse(last.air_date)) / 864e5;
+  if (!(age <= NEWEP.DAYS)) return null;
+  const ls = Number(last.season_number), le = Number(last.episode_number);
+  if (!(ls > 0)) return null;
+  const seasons = Object.keys(prog).filter(k => Array.isArray(prog[k]) && prog[k].length).map(Number);
+  if (!seasons.length) return null;
+  const maxS = Math.max(...seasons);
+  if (ls > maxS) return { label: 'Neue Staffel', s: ls, e: le };
+  if (ls < maxS) return null;
+  const seen = prog[String(ls)];
+  if (seen.includes(le)) return null;
+  const n = le - Math.max(...seen);
+  return n > 0 ? { label: n > 1 ? `${n} neue Folgen` : 'Neue Folge', s: ls, e: le } : null;
+}
+function newEpOf(p) {
+  if (!p || p.type !== 'tv' || !WL.connected) return null;
+  const o = WL.item('tv', p.id);
+  if (!o || (o.status !== 'watching' && o.status !== 'done')) return null;
+  return newEpInfo(o, TM.details_['tv:' + p.id]);
+}
+async function scanNewEps(force) {
+  if (NEWEP.busy || !WL.connected || !TM.key()) return;
+  if (!force && NEWEP.at && Date.now() - NEWEP.at < 3 * 3600e3) return;
+  NEWEP.busy = true;
+  const fresh = !!NEWEP.at;   // bei späteren Läufen Details neu holen (neue Folgen erkennen)
+  try {
+    const items = (WL.s.items || []).filter(o => o.media_type === 'tv' && (o.status === 'watching' || o.status === 'done')
+      && o.progress && Object.values(o.progress).some(l => Array.isArray(l) && l.length));
+    for (let i = 0; i < items.length; i += 4) {
+      await Promise.all(items.slice(i, i + 4).map(o => {
+        if (fresh) delete TM.details_['tv:' + o.tmdb_id];
+        return TM.details('tv', o.tmdb_id).catch(() => {});
+      }));
+    }
+    NEWEP.at = Date.now();
+    renderRecsSoon();
+  } finally { NEWEP.busy = false; }
+}
+setInterval(() => scanNewEps(false), 3600e3);
+
+/* ================= Fokus-Vorschau (Netflix-Stil) ================= */
+// Steht der Fokus (Fernbedienung/Tastatur) auf einer Kachel in einer Reihe, zeigt der obere Bereich
+// Bild, Logo und Beschreibung dieses Titels; die fokussierte Reihe rutscht direkt darunter.
+const PVP = {};   // "tv:123" -> Titel der gezeigten Poster-Kacheln
+const PV = { on: false, kbd: false, key: '', t: null, layer: 0, bg: '', line: 0 };
+const PV_VIEWS = new Set(['home', 'series', 'movies']);
+function pvEligible(el) {
+  return !!(el && el.classList && PV.kbd && !document.documentElement.classList.contains('touch') && PV_VIEWS.has(state.view)
+    && el.classList.contains('tile') && !el.classList.contains('skeleton') && el.closest('.rail') && el.closest('.view.active')
+    && !sheetOpen && !playerOpen);
+}
+function pvOff() {
+  if (!PV.on) return;
+  PV.on = false; PV.key = ''; clearTimeout(PV.t);
+  document.documentElement.classList.remove('pv');
+  for (const x of document.querySelectorAll('.pv-above')) x.classList.remove('pv-above');
+}
+function pvSet(el) {
+  if (!pvEligible(el)) return pvOff();
+  if (!PV.on) { PV.on = true; document.documentElement.classList.add('pv'); }
+  const sec = el.closest('section'), view = sec.closest('.view');
+  for (const x of view.querySelectorAll('section, .hero, .pad, .cat-label, .chips')) {
+    const above = x !== sec && !x.contains(sec) && !!(sec.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_PRECEDING);
+    x.classList.toggle('pv-above', above);
+  }
+  // Reihe so tief wie möglich, darüber bleibt Platz für die Infos
+  const hdr = $('header').offsetHeight, h = sec.offsetHeight, vh = window.innerHeight;
+  PV.line = Math.round(Math.max(hdr + 150, Math.min(vh * 0.62, vh - h - 6)));
+  document.documentElement.style.setProperty('--pv-line', PV.line + 'px');
+  pvInfo(el);
+}
+function pvData(el) {
+  const d = el.dataset;
+  if (d.show) {
+    const p = PVP[d.show] || TM.find(d.show);
+    if (!p) return null;
+    const dt = TM.details_[d.show], ne = newEpOf(p);
+    const seasons = dt && dt.number_of_seasons ? `${dt.number_of_seasons} Staffel${dt.number_of_seasons > 1 ? 'n' : ''}` : null;
+    return { key: d.show, tm: d.show, title: p.title, logo: dt && TM.pickLogo(dt),
+      meta: [TM.info(p), seasons, dt ? TM.genres(dt).slice(0, 2).join(', ') : null].filter(Boolean).join(' · '),
+      ov: p.overview || (dt && dt.overview) || '', extra: ne ? `${ne.label} · S${ne.s} E${ne.e}` : '',
+      bg: (dt && dt.backdrop_path) || p.backdrop ? `${TM.IMG}w1280${(dt && dt.backdrop_path) || p.backdrop}` : '' };
+  }
+  if (d.resume) {
+    const v = VP.entry(d.resume), m = v && v.m;
+    if (!m) return null;
+    const dt = m.tmdb ? TM.details_[m.tmdb] : null;
+    const left = v.dur && v.pos ? Math.max(1, Math.round((v.dur - v.pos) / 60)) : 0;
+    return { key: 'r:' + d.resume, tm: m.tmdb || '', title: m.show, logo: dt && TM.pickLogo(dt),
+      meta: dt ? [m.tmdb.startsWith('movie') ? 'Film' : 'Serie', String(dt.first_air_date || dt.release_date || '').slice(0, 4) || null, TM.genres(dt).slice(0, 2).join(', ') || null].filter(Boolean).join(' · ') : '',
+      extra: [m.movie ? 'Weiterschauen' : `S${m.season} E${m.num}${m.title ? ' · ' + m.title : ''}`, left ? `noch ${left} Min.` : ''].filter(Boolean).join(' · '),
+      ov: (dt && dt.overview) || '', bg: dt && dt.backdrop_path ? `${TM.IMG}w1280${dt.backdrop_path}` : (m.img || '') };
+  }
+  if (d.card) {
+    const c = state.channels.find(x => x.id === d.card);
+    if (!c) return null;
+    const n = EPG.now(c.id);
+    return { key: 'c:' + c.id, title: c.name, chLogo: c.logo || '', meta: ['Live-TV', c.group].filter(Boolean).join(' · '),
+      extra: n && n.cur ? `Jetzt: ${n.cur.t}` : '',
+      ov: [n && n.cur ? `${hhmm(n.cur.s)}–${hhmm(n.cur.e)}` : '', n && n.next ? `Danach ${hhmm(n.next.s)}: ${n.next.t}` : ''].filter(Boolean).join(' · '), bg: '' };
+  }
+  const cap = el.querySelector('.caption'), sub = el.querySelector('.sub'), t = el.querySelector('.art span, .t');
+  const title = ((cap && cap.textContent.trim()) || (t && t.textContent.trim()) || '').replace(/^ $/, '');
+  return { key: 'x:' + title, title, meta: sub ? sub.textContent.trim() : '', ov: '', bg: '' };
+}
+function pvInfo(el) {
+  const x = pvData(el), box = $('#pvInfo');
+  if (!x) { box.innerHTML = ''; pvBg(''); return; }
+  const same = x.key === PV.key;
+  PV.key = x.key;
+  box.innerHTML = `${x.logo ? `<img class="pv-logo" src="${TM.IMG}w500${x.logo}" alt="">`
+      : x.chLogo ? `<img class="pv-ch" src="${esc(x.chLogo)}" alt="" onerror="this.remove()"><h2>${esc(x.title)}</h2>` : `<h2>${esc(x.title)}</h2>`}
+    ${x.extra ? `<div class="pv-extra">${esc(x.extra)}</div>` : ''}
+    ${x.meta ? `<div class="pv-meta">${esc(x.meta)}</div>` : ''}
+    ${x.ov ? `<p class="pv-ov">${esc(x.ov)}</p>` : ''}`;
+  if (!same) { box.classList.remove('enter'); void box.offsetWidth; box.classList.add('enter'); }
+  if (same) return;
+  // Bild und Details erst nach kurzem Verweilen (beim schnellen Durchblättern nichts nachladen)
+  clearTimeout(PV.t);
+  PV.t = setTimeout(() => {
+    if (PV.key !== x.key) return;
+    pvBg(x.bg);
+    if (x.tm && !TM.details_[x.tm] && TM.key()) {
+      const [type, id] = x.tm.split(':');
+      TM.details(type, Number(id)).then(() => { const f = document.activeElement; if (PV.on && PV.key === x.key && f) { PV.key = ''; pvInfo(f); } }).catch(() => {});
+    }
+  }, 280);
+}
+function pvBg(url) {
+  if (url === PV.bg) return;
+  PV.bg = url;
+  const layers = [$('#pvBg1'), $('#pvBg2')];
+  if (!url) { layers.forEach(l => l.classList.remove('show')); return; }
+  const img = new Image();
+  img.onload = () => {
+    if (PV.bg !== url) return;
+    PV.layer = 1 - PV.layer;
+    const on = layers[PV.layer], off = layers[1 - PV.layer];
+    on.style.backgroundImage = `url("${url}")`;
+    on.classList.add('show'); off.classList.remove('show');
+  };
+  img.src = url;
+}
+document.addEventListener('keydown', e => { if (e.key && e.key.startsWith('Arrow')) PV.kbd = true; }, true);
+document.addEventListener('pointerdown', () => { PV.kbd = false; pvOff(); }, true);
+document.addEventListener('focusin', e => pvSet(e.target));
+
 /* ================= Entdecken laden ================= */
 async function loadDiscover(force) {
   try {
@@ -675,6 +831,7 @@ async function loadDiscover(force) {
   } catch (e) {}
   if (!TM.key()) { renderRecs(); renderHero(); return; }
   renderRecs();
+  scanNewEps(force);
   const tabs = TM.tabs();
   await Promise.all(tabs.filter(t => !t.genre).map(t => TM.ensure(t, force).catch(() => {}).then(() => {
     renderRecsSoon();
@@ -2892,6 +3049,7 @@ function navigate(dir) {
   }
   // In die Kopfzeile oder in die oberste Zeile der Seite → immer ganz nach oben
   if (best.closest('header')) { pageScrollTo(0); return; }
+  if (PV.on && pvEligible(best)) { scrollToFocus(best); return; }
   if (dir === 'ArrowUp') {
     const bt = best.getBoundingClientRect().top;
     if (!all.some(el => el !== best && !el.closest('header') && el.getBoundingClientRect().top < bt - 4)) { scrollInRow(best); pageScrollTo(0); return; }
@@ -2934,6 +3092,11 @@ function scrollInRow(el) {
 }
 function scrollToFocus(el) {
   scrollInRow(el);
+  if (PV.on && pvEligible(el)) {
+    const sec = el.closest('section');
+    pageScrollTo(window.scrollY + sec.getBoundingClientRect().top - PV.line);
+    return;
+  }
   const hb = $('header').getBoundingClientRect().bottom;
   const now = window.scrollY, y0 = pageY();
   // Zeilenüberschrift mit sichtbar halten (nicht unter der Kopfzeile verstecken)
