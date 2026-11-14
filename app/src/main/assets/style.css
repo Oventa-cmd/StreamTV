@@ -809,3 +809,30 @@ html.web #swNative,html.web #swNativeLive{display:none}
 html.web #extBar{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);z-index:5;display:flex;gap:.7rem;flex-wrap:wrap;justify-content:center;max-width:92vw}
 html.web #extBar .btn{text-decoration:none;background:rgba(255,255,255,.16);color:#fff;padding:.8rem 1.3rem;border-radius:999px;font-weight:700;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
 html.web #extBar .btn:first-child{background:#fff;color:#000}
+
+/* ---------- Kompakte Kacheln: Serien & Filme hochkant, mehr pro Reihe, weniger Luft ---------- */
+.rail{gap:.65rem;padding:.9rem var(--pad) 1.1rem}
+.grid{grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr));gap:1.1rem .65rem}
+.grid.posters{grid-template-columns:repeat(auto-fill,minmax(7.4rem,1fr));gap:1.1rem .65rem}
+.search-res .grid{grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr))}
+.section-label{margin:1.3rem 0 0}
+.tile{width:11rem}
+.rail .tile.poster{width:7.4rem}
+.tile.show.cont{width:13rem}
+.tile.ev{width:15rem}
+.tile.poster .art{aspect-ratio:2/3}
+.tile .caption{margin-top:.45rem;font-size:.82rem}
+.tile .sub{font-size:.7rem;margin-top:.1rem}
+.tile:focus .caption,.tile:focus .sub{transform:translateY(.3rem)}
+.tile.poster:focus .art,.tile.poster:hover .art{transform:scale(1.06) translateY(-.2rem)}
+.tile.show.poster .t{left:.55rem;right:.55rem;bottom:.5rem;font-size:.85rem;-webkit-line-clamp:3}
+.tile.show.poster .rank{left:.4rem;top:.1rem;font-size:2.5rem}
+.tile.show.poster.more .art span{font-size:.85rem;text-align:center;padding:0 .5rem}
+@media (max-width:600px){
+  .tile{width:9rem}.rail .tile.poster{width:6.3rem}.tile.show.cont{width:11rem}.tile.ev{width:13rem}
+  .grid.posters{grid-template-columns:repeat(auto-fill,minmax(6.3rem,1fr))}
+}
+@media (min-width:1600px){
+  .tile{width:12rem}.rail .tile.poster{width:8rem}.tile.show.cont{width:14rem}.tile.ev{width:16rem}
+  .grid.posters{grid-template-columns:repeat(auto-fill,minmax(8rem,1fr))}
+}

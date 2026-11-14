@@ -250,11 +250,14 @@ function renderOsdEpg() {
   if (x) { $('#eNextT').textContent = hhmm(x.s); $('#eNext').textContent = x.t; }
 }
 function showTileHTML(p, rank) {
-  const img = p.backdrop ? `${TM.IMG}w780${p.backdrop}` : p.poster ? `${TM.IMG}w500${p.poster}` : '';
-  return `<div class="tile show focusable" tabindex="0" data-show="${p.type}:${p.id}">
-    <div class="art">${img ? `<img class="bd" src="${img}" alt="" loading="lazy">` : ''}<div class="shade"></div>
-      ${rank ? `<span class="rank">${rank}</span>` : ''}<div class="t">${esc(p.title)}</div></div>
-    <div class="caption">${esc(p.reason || TM.info(p))}</div>
+  // Hochkant-Poster wie bei Netflix → deutlich mehr Titel pro Reihe; ohne Poster: Backdrop zugeschnitten + Titel
+  const img = p.poster ? `${TM.IMG}w342${p.poster}` : p.backdrop ? `${TM.IMG}w780${p.backdrop}` : '';
+  return `<div class="tile show poster focusable" tabindex="0" data-show="${p.type}:${p.id}">
+    <div class="art">${img ? `<img class="cov" src="${img}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="ini">${esc(initials(p.title))}</span>`}
+      ${p.poster ? '' : `<div class="shade"></div><div class="t">${esc(p.title)}</div>`}
+      ${rank ? `<span class="rank">${rank}</span>` : ''}</div>
+    <div class="caption">${esc(p.title)}</div>
+    <div class="sub">${esc(p.reason || TM.info(p)) || '&nbsp;'}</div>
   </div>`;
 }
 function resumeTileHTML(v) {
@@ -271,7 +274,7 @@ function continueRail() {
   const list = VP.continueList();
   return list.length ? railHTML('Weiterschauen', list.map(resumeTileHTML).join(''), 'OK gedrückt halten zum Entfernen') : '';
 }
-const skeletons = n => Array.from({ length: n }, () => `<div class="tile show skeleton"><div class="art"></div><div class="caption">&nbsp;</div></div>`).join('');
+const skeletons = (n, wide) => Array.from({ length: n }, () => `<div class="tile ${wide ? 'ev' : 'show poster'} skeleton"><div class="art"></div><div class="caption">&nbsp;</div></div>`).join('');
 function railHTML(title, inner, count) {
   return `<section><div class="section-label">${esc(title)}${count != null ? ` <small>${count}</small>` : ''}</div><div class="rail">${inner}</div></section>`;
 }
@@ -330,9 +333,9 @@ function availList(id, type) {
 }
 function recRowHTML(t, moreView, used) {
   const raw = TM.list(t.id);
-  if (!raw.length && (TM.loading.has(t.id) || !TM.cache[t.id])) return t.genre ? '' : railHTML(t.label, skeletons(5));
+  if (!raw.length && (TM.loading.has(t.id) || !TM.cache[t.id])) return t.genre ? '' : railHTML(t.label, skeletons(8));
   let list = availList(t.id, t.type);
-  if (!list) return t.genre ? '' : railHTML(t.label, skeletons(5));
+  if (!list) return t.genre ? '' : railHTML(t.label, skeletons(8));
   // Genre-Reihen: nichts zeigen, was weiter oben schon steht → mehr Abwechslung
   if (used && t.genre) list = list.filter(p => !used.has(p.type + ':' + p.id));
   list = t.rank ? list.slice(0, 10) : list.slice(0, RAIL_MAX);
@@ -340,7 +343,7 @@ function recRowHTML(t, moreView, used) {
   if (used) for (const p of list) used.add(p.type + ':' + p.id);
   const items = list.map(p => showTileHTML(p, t.rank ? raw.indexOf(p) + 1 : 0));
   if (!items.length) return '';
-  const more = moreView ? `<div class="tile show more focusable" tabindex="0" data-view="${moreView}"><div class="art"><span>Alle ${moreView === 'movies' ? 'Filme' : 'Serien'} →</span></div><div class="caption">&nbsp;</div></div>` : '';
+  const more = moreView ? `<div class="tile show poster more focusable" tabindex="0" data-view="${moreView}"><div class="art"><span>Alle ${moreView === 'movies' ? 'Filme' : 'Serien'} →</span></div><div class="caption">&nbsp;</div></div>` : '';
   return railHTML(t.label, items.join('') + more);
 }
 /* ---------- Watchlist (Serien-Watchlist-Konto): am Schauen zuerst, dann geplant ---------- */
@@ -363,7 +366,7 @@ function wlRowHTML(type) {
   const all = wlPicks(type);
   if (!all.length) return '';
   const list = all.filter(p => { const m = availMode(p.type); return m === 'all' || (m === 'filter' && XS.has(p)); });
-  if (!list.length) return all.some(p => availMode(p.type) === 'wait') ? railHTML('Meine Watchlist', skeletons(4)) : '';
+  if (!list.length) return all.some(p => availMode(p.type) === 'wait') ? railHTML('Meine Watchlist', skeletons(8)) : '';
   return railHTML('Meine Watchlist', list.map(p => showTileHTML(p)).join(''), 'OK gedrückt halten zum Verschieben').replace('<section>', `<section class="wl-row" data-wltype="${type || ''}">`);
 }
 /* ---------- Watchlist sortieren: OK halten → ◀▶ verschieben → OK speichern ---------- */
@@ -1263,7 +1266,7 @@ function renderSport() {
     for (const e of list) { if (SP.isLive(e, now) || e.weekend && e.start < now) continue; const k = dayKey(e.start); if (!days.has(k)) days.set(k, []); days.get(k).push(e); }
     let n = 0;
     for (const [, evs] of days) { if (n++ >= 10) break; html += railHTML(dayLabel(evs[0].start), evs.slice(0, 40).map(evTileHTML).join(''), evs.length); }
-    if (!html) html = SP.loading ? railHTML('Lade Spielpläne …', skeletons(4))
+    if (!html) html = SP.loading ? railHTML('Lade Spielpläne …', skeletons(4, true))
       : `<p class="empty">${SP.errors.length >= 8 ? 'Sportdaten gerade nicht erreichbar. Internetverbindung prüfen.' : 'Keine Events in den nächsten 14 Tagen.'}</p>`;
     $('#spRows').innerHTML = html;
     $('#spFoot').innerHTML = (SP.errors.length ? `Nicht erreichbar: ${esc(SP.errors.join(', '))} · <button class="mini focusable" id="spRetry">Erneut laden</button><br>` : '')
@@ -3143,7 +3146,7 @@ async function aiSearch(text) {
   if (!WL.connected) return toast('Claude-Suche braucht das Watchlist-Konto (Einstellungen)');
   const seq = ++aiSeq; aiQuery = text;
   const box = $('#searchAi');
-  box.innerHTML = railHTML('✨ Claude denkt nach …', skeletons(5));
+  box.innerHTML = railHTML('✨ Claude denkt nach …', skeletons(8));
   try {
     if (!await WL.ensureToken()) throw new Error('Watchlist: bitte neu anmelden');
     const r = await WL.http('POST', '/functions/v1/smart-search', { q: text, context: aiContext() });
