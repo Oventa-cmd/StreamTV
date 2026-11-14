@@ -444,7 +444,8 @@ const TM = {
       if (p) return p;
     }
     return (this.searchRes || []).find(x => x.type + ':' + x.id === key) || (this.extra || []).find(x => x.type + ':' + x.id === key)
-      || (typeof wlPicks === 'function' ? wlPicks().find(x => x.type + ':' + x.id === key) : null) || null;
+      || (typeof wlPicks === 'function' ? wlPicks().find(x => x.type + ':' + x.id === key) : null)
+      || (typeof PVP !== 'undefined' && PVP[key]) || null;
   },
   async search(q) {
     const j = await this.get('/search/multi', { query: q, include_adult: 'false' });

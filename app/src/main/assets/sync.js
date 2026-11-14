@@ -1,14 +1,14 @@
 /* =====================================================================
    StreamTV – Cloud-Sync über das StreamTV-Konto (account.js, Tabelle „store“)
    Synchronisiert: Weiterschauen-Fortschritt, Favoriten, Zuletzt gesehen, Einstellungen,
-   gelernte Intro-Marken, Tonspur-Wahl, Sport-Erinnerungen.
+   gelernte Intro-Marken, Tonspur-Wahl, Sport-Erinnerungen, Statistik (pro Gerät).
    NICHT synchronisiert: IPTV-Zugänge (Server, Benutzer, Passwort) und Kanallisten.
    Server-/Benutzer-/Passwort-Angaben in Stream-Adressen werden vor dem Hochladen
    durch Platzhalter ersetzt und auf dem anderen Gerät mit dessen eigenen Zugängen
    wieder eingesetzt.
    ===================================================================== */
 const SYNC = {
-  KEYS: ['streamtv.vodpos', 'streamtv.favs', 'streamtv.recent', 'streamtv.settings', 'streamtv.skip', 'streamtv.tracks', 'streamtv.remind'],
+  KEYS: ['streamtv.vodpos', 'streamtv.favs', 'streamtv.recent', 'streamtv.settings', 'streamtv.skip', 'streamtv.tracks', 'streamtv.remind', 'streamtv.stats'],
   META: 'streamtv.syncmeta',          // { mtime: {key: ms}, seen: {key: ms}, pulledAt }
   LOCAL_SETTINGS: ['lite', 'vpnAuto', 'vpnReq', 'nativeVod'],   // bleiben pro Gerät (VPN-App, Player)
   applying: false,
@@ -108,7 +108,7 @@ const SYNC = {
         for (const k of this.KEYS) {
           const row = remote[k];
           if (!row) { if (localStorage.getItem(k) != null) push.add(k); continue; }
-          if (k === VP.STORE || k === SK.STORE) {
+          if (k === VP.STORE || k === SK.STORE || k === 'streamtv.stats') {
             const r2 = this.merge(k, row);
             if (r2.local) changed.add(k);
             if (r2.push) push.add(k);
@@ -191,6 +191,7 @@ const SYNC = {
   },
   /** Fortschritt bzw. Intro-Marken zusammenführen: pro Eintrag gewinnt der neuere. */
   merge(k, row) {
+    if (k === 'streamtv.stats' && typeof ST !== 'undefined') ST.flush();   // ausstehende Sekunden zuerst sichern
     let inc = {}, cur = {};
     try { inc = JSON.parse(this.restore(row.value)); cur = JSON.parse(localStorage.getItem(k) || '{}'); } catch (e) { return { local: false, push: false }; }
     let changed = false, push = false;
@@ -205,6 +206,18 @@ const SYNC = {
       }
       for (const id in cur) if (!inc[id] || (cur[id].at || 0) > (inc[id].at || 0)) push = true;   // hier Neueres
       if (changed) { this.set(k, JSON.stringify(cur)); VP.s = null; }
+    } else if (k === 'streamtv.stats') {
+      // jedes Gerät schreibt nur seinen eigenen Teil; pro Gerät gewinnt der neuere Stand
+      cur.dev = cur.dev || {}; cur.meta = cur.meta || {};
+      const idev = inc.dev || {}, imeta = inc.meta || {};
+      for (const id in idev) {
+        if (!idev[id]) continue;
+        if (!cur.dev[id] || (idev[id].at || 0) > (cur.dev[id].at || 0)) { cur.dev[id] = idev[id]; changed = true; }
+      }
+      for (const id in cur.dev) if (!idev[id] || (cur.dev[id].at || 0) > (idev[id].at || 0)) push = true;
+      for (const key in imeta) if (!cur.meta[key]) { cur.meta[key] = imeta[key]; changed = true; }
+      for (const key in cur.meta) if (!imeta[key]) push = true;
+      if (changed) { this.set(k, JSON.stringify(cur)); if (typeof ST !== 'undefined') ST.d = null; }
     } else {
       cur.learn = cur.learn || {};
       for (const id in (inc.learn || {})) {

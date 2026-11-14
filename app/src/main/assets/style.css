@@ -867,3 +867,31 @@ html.pv .view.active{padding-bottom:75vh}
 .tile .nb{position:absolute;left:50%;bottom:0;transform:translateX(-50%);white-space:nowrap;padding:.2rem .55rem;border-radius:.4rem .4rem 0 0;
   background:var(--red);color:#fff;font-size:.6rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;box-shadow:0 -2px 10px rgba(0,0,0,.35)}
 .tile.show.poster .nb~.t,.tile.show.poster .t:has(~.nb){bottom:1.5rem}
+
+/* ---------- Schlaf-Timer ---------- */
+#sleepScr{position:fixed;inset:0;z-index:10000;background:#000;display:grid;place-items:center;cursor:none}
+#sleepScr .sl-in{display:flex;flex-direction:column;align-items:center;gap:.5rem;text-align:center;transition:opacity 2.5s ease;animation:fade 1s ease both}
+#sleepScr.dim .sl-in{opacity:0}
+#sleepScr .sl-moon{font-size:3.2rem;filter:drop-shadow(0 0 30px rgba(255,214,10,.35))}
+#sleepScr b{font-size:1.6rem;font-weight:800;letter-spacing:-.02em}
+#sleepScr span{color:var(--mut);font-size:.9rem}
+
+/* ---------- Statistik ---------- */
+.st-top{position:relative;overflow:hidden;border-radius:var(--r-lg);min-height:10rem;margin-top:.8rem;display:flex;align-items:flex-end;
+  background:radial-gradient(circle at 80% 0%,rgba(229,9,20,.45),transparent 60%),#141416;border:1px solid var(--line)}
+.st-top-bg{position:absolute;inset:0;background-size:cover;background-position:center 25%;opacity:.55}
+.st-top::after{content:"";position:absolute;inset:0;background:linear-gradient(to right,rgba(0,0,0,.85),transparent 70%),linear-gradient(to top,rgba(0,0,0,.6),transparent 60%)}
+.st-top-in{position:relative;z-index:1;padding:1.2rem 1.4rem}
+.st-top-in small{color:#ff6b70;font-weight:700;font-size:.78rem;letter-spacing:.06em;text-transform:uppercase}
+.st-top-in h2{font-size:clamp(1.6rem,3.4vw,2.4rem);font-weight:800;letter-spacing:-.035em;line-height:1.1;margin:.2rem 0 .3rem}
+.st-top-in span{color:var(--mut);font-weight:600}
+.st-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr));gap:.65rem;margin-top:.8rem}
+.st-kpi{padding:.9rem 1rem;border-radius:var(--r);background:rgba(28,28,30,.85);border:1px solid var(--line)}
+.st-kpi b{display:block;font-size:1.12rem;white-space:nowrap;font-weight:800;letter-spacing:-.02em}
+.st-kpi span{display:block;color:var(--mut);font-size:.76rem;font-weight:500;margin-top:.15rem}
+.st-chart{display:flex;align-items:stretch;gap:.3rem;height:8rem;margin-top:.8rem;padding:.9rem 1rem .5rem;border-radius:var(--r);background:rgba(28,28,30,.85);border:1px solid var(--line)}
+.st-bar{flex:1 1 0;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:.3rem}
+.st-bar i{display:block;width:100%;max-width:2.2rem;border-radius:.3rem .3rem .15rem .15rem;background:rgba(255,255,255,.22)}
+.st-bar.now i{background:var(--red)}
+.st-bar span{font-size:.6rem;color:var(--mut2);white-space:nowrap}
+.tile .rank.st-rk{position:absolute;left:.5rem;top:.2rem;font-size:1.6rem;font-weight:800;color:rgba(255,255,255,.9)}

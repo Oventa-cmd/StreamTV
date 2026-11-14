@@ -116,6 +116,12 @@
   </section>
 
   <!-- ================= Kanäle ================= -->
+  <section class="view" id="view-stats">
+    <div class="pad"><h1 class="large-title">Dein Rückblick</h1></div>
+    <div class="chips" id="stChips"></div>
+    <div id="stBody"></div>
+  </section>
+
   <section class="view" id="view-manage">
     <div class="pad settings">
       <h1 class="large-title">Kanäle verwalten</h1>
@@ -151,6 +157,12 @@
       <div class="group-title">App-Update</div>
       <div class="group" id="updGroup"></div>
       <p class="group-foot" id="updFoot"></p>
+      </div>
+
+      <!-- Statistik -->
+      <div class="group-title">Rückblick</div>
+      <div class="group">
+        <button class="row-btn focusable" id="statsOpen" type="button"><span class="lbl"><b>📊 Statistik</b><small id="statsOpenSub"></small></span><span class="chev">›</span></button>
       </div>
 
       <!-- Quellen -->
@@ -261,6 +273,7 @@
 <div id="remind" class="remind off" role="alert"></div>
 
 <!-- ================= Bildschirmschoner ================= -->
+<div id="sleepScr" class="hidden" aria-hidden="true"><div class="sl-in"><div class="sl-moon">🌙</div><b>Gute Nacht</b><span>Schlaf-Timer abgelaufen – beliebige Taste zum Aufwecken</span></div></div>
 <div id="saver" class="saver hidden" aria-hidden="true">
   <div class="sv-bg" id="svBg"></div><div class="sv-bg" id="svBg2"></div><div class="sv-shade"></div>
   <div class="sv-clock" id="svClock"></div>
@@ -327,6 +340,7 @@
 <script src="series.js"></script>
 <script src="epg.js"></script>
 <script src="skip.js"></script>
+<script src="stats.js"></script>
 <script src="sport.js"></script>
 <script src="app.js"></script>
 </body>

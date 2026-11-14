@@ -532,6 +532,8 @@ function renderSettings() {
   renderUpdate();
   const nl = (s.hideLive || []).length, ns = (s.hideSeries || []).length, nv = (s.hideVod || []).length;
   $('#catOpenSub').textContent = nl || ns || nv ? `Live-TV: ${nl} · Serien: ${ns} · Filme: ${nv} ausgeblendet` : 'Alle Kategorien sichtbar';
+  const wk = ST.sum(ST.day(Date.now() - 6 * 864e5), ST.day());
+  $('#statsOpenSub').textContent = `${fmtDur(Object.values(wk.t).reduce((a, b) => a + b, 0))} in den letzten 7 Tagen`;
   $('#manageOpenSub').textContent = `${state.channels.length} Kanäle · ${state.favs.length} Favoriten`;
 }
 function renderWlGroup() {
@@ -1613,7 +1615,7 @@ $('#saver').addEventListener('click', () => closeSaver());
 $('#remind').addEventListener('click', () => actReminder());
 setInterval(() => {
   const m = Number(state.settings.saver) || 0;
-  if (!m || saverOpen || remEv || document.hidden) return;
+  if (!m || saverOpen || remEv || SLEEP.on || document.hidden) return;
   if (playerOpen && !video.paused) { lastInput = Date.now(); return; }
   if (Date.now() - lastInput > m * 60000) openSaver();
 }, 5000);
@@ -1807,6 +1809,7 @@ function handleBack() {
   if (WLM.on) { endMove(); return true; }
   if (state.view === 'cats') { closeCats(); return true; }
   if (state.view === 'manage') { closeManage(); return true; }
+  if (state.view === 'stats') { closeStats(); return true; }
   if (state.view !== 'home') { show('home'); return true; }
   return false;
 }
@@ -1818,7 +1821,7 @@ function closeManage() {
 }
 
 /* ================= Ansichten ================= */
-const TAB_OF = { manage: 'settings', cats: 'settings' };   // Unterseiten der Einstellungen
+const TAB_OF = { manage: 'settings', cats: 'settings', stats: 'settings' };   // Unterseiten der Einstellungen
 function show(view) {
   if (view === 'discover') view = 'series';                  // alte Links (Launcher)
   if (view === 'favorites') { view = 'live'; if (favList().length) { state.cat = FAV_CAT; renderLive(); } }
@@ -1870,7 +1873,9 @@ const liveBuf = () => [1, 2, 3].includes(Number(state.settings.liveBuf)) ? Numbe
 NV.ev = (type, pos, dur, paused, msg) => {
   if (!NV.on) return;
   if (type !== 'timeupdate') dbg('nv', type, Math.round(pos / 1000), paused ? 'paused' : '', msg || '');
-  NV.t = pos / 1000; NV.d = dur > 0 ? dur / 1000 : NaN; NV.paused = !!paused;
+  const stale = NV.seeking && type === 'timeupdate' && Date.now() - NV.seekAt < 4000 && Math.abs(pos / 1000 - NV.t) > 3;
+  if (!stale) NV.t = pos / 1000;
+  NV.d = dur > 0 ? dur / 1000 : NaN; NV.paused = !!paused;
   if (NV.seeking && (type === 'playing' || (type === 'pause' && paused) || Date.now() - NV.seekAt > 30000)) { NV.seeking = false; video.dispatchEvent(new Event('seeked')); }
   if (type === 'error') { console.warn('Nativer Player:', msg); if (failCb) failCb(); return; }
   if (type === 'tracks') {
@@ -2200,16 +2205,21 @@ const outroLen = d => Math.max(60, Math.min(150, d * 0.04));
 const serKey = v => !v || v.ep.movie ? null : v.ctx && v.ctx.tmdb ? v.ctx.tmdb : v.ctx && v.ctx.acc ? 'xs:' + v.ctx.acc + '|' + v.ctx.sid : 'show:' + v.show;
 async function loadSegments(v) {
   const d = video.duration;
-  if (!isFinite(d) || d <= 0) return;
+  if (!isFinite(d) || d <= 0 || v.segLoading || v.segReady) return;
+  v.segLoading = true;
+  try { await loadSegs(v, d); } finally { v.segLoading = false; }
+}
+async function loadSegs(v, d) {
   const t = v.ctx && v.ctx.tmdb ? String(v.ctx.tmdb).split(':') : null;
   const db = t && Number(t[1]) > 0 ? await SK.fromDb(t[0] === 'movie' ? 'movie' : 'tv', Number(t[1]), v.ep.season, v.ep.num, d) : null;
   if (vod !== v) return;
   const L = SK.learned(serKey(v)), segs = [];
-  if (db && db.recap && db.recap.e) segs.push({ kind: 'recap', from: db.recap.s, to: db.recap.e, target: db.recap.e, src: 'db' });
-  if (db && db.intro) segs.push({ kind: 'intro', from: db.intro.s, to: db.intro.e || d, target: db.intro.e || d, src: 'db' });
-  else if (!v.ep.movie && L.intro) segs.push({ kind: 'intro', from: Math.max(0, L.intro.s - 10), to: L.intro.e, target: Math.max(L.intro.s, L.intro.e - LEARN_MARGIN), src: 'learn' });
+  if (db && db.recap && db.recap.e && db.recap.e < d * 0.5) segs.push({ kind: 'recap', from: db.recap.s, to: db.recap.e, target: db.recap.e, src: 'db' });
+  const dbIntro = db && db.intro && db.intro.e && db.intro.e - db.intro.s <= 300 && db.intro.e < d * 0.5 ? db.intro : null;
+  if (dbIntro) segs.push({ kind: 'intro', from: dbIntro.s, to: dbIntro.e, target: dbIntro.e, src: 'db' });
+  else if (!v.ep.movie && L.intro) segs.push({ kind: 'intro', from: Math.max(0, L.intro.s - 10), to: L.intro.e, target: Math.max(L.intro.s, L.intro.e - LEARN_MARGIN), start: L.intro.s, src: 'learn' });
   else if (!v.ep.movie && d > 180) segs.push({ kind: 'intro', from: 0, to: Math.min(INTRO_WINDOW, d * 0.3), target: null, src: 'auto' });
-  if (db && db.credits) {
+  if (db && db.credits && db.credits.s > d * 0.5) {
     const post = db.credits.e && db.credits.e < d - 10;   // Szene nach dem Abspann
     segs.push({ kind: 'outro', from: db.credits.s, to: post ? db.credits.e : d, target: post ? db.credits.e : null, src: 'db' });
   } else if (L.outro && !v.ep.movie && L.outro < d * 0.5) segs.push({ kind: 'outro', from: d - L.outro, to: d, target: null, src: 'learn' });
@@ -2221,9 +2231,12 @@ async function loadSegments(v) {
 }
 function showSkip(seg) {
   const b = $('#pSkip');
+  if (seg.kind === 'outro' && SLEEP.ep) { if (vod) vod.used.outro = true; sleepFire(); return; }
   skipSeg = seg; skipKind = seg.kind; skipShownAt = Date.now();
   // Automatisch überspringen – nur mit bekanntem Ende (TheIntroDB/gelernt), nie bei der Faustregel
   if (seg.kind !== 'outro' && seg.src !== 'auto' && segMode(seg) === 'auto') {
+    // gelerntes Intro: erst am tatsächlichen Intro-Beginn springen (der Button erscheint 10 s früher)
+    if (seg.start != null && (video.currentTime || 0) < seg.start) { skipSeg = null; skipKind = null; return; }
     toast(seg.kind === 'intro' ? 'Intro übersprungen' : 'Rückblick übersprungen');
     doSkip(true);
     return;
@@ -2386,6 +2399,7 @@ async function backfillWatched() {
 
 async function syncWatched(v) {
   v.synced = true;
+  ST.done(v);
   if (!WL.connected) return;
   if (v.ctx && !v.ctx.tmdb) {   // Anbieter-Titel ohne TMDB-ID: per Name suchen
     const tm = await guessTmdb(v.ctx.name || v.show, !!v.ep.movie);
@@ -2645,6 +2659,7 @@ video.addEventListener('timeupdate', () => {
   if (!vod) return;
   updateProg();
   if (!vod.synced && isFinite(video.duration) && video.duration > 60 && video.currentTime / video.duration >= 0.9) syncWatched(vod);
+  if (!vod.segReady && !vod.segLoading && vod.resumed) loadSegments(vod);   // Dauer war beim Start noch unbekannt
   checkSkip();
   settleBurst(false);
   if (Date.now() - vodSaveAt > 10000) { vodSaveAt = Date.now(); saveVodPos(); }
@@ -2653,6 +2668,7 @@ video.addEventListener('ended', () => {
   if (!vod) return;
   saveVodPos();
   if (!vod.synced) syncWatched(vod);
+  if (SLEEP.ep) { sleepFire(); return; }
   if (!vod.ep.movie && vod.idx + 1 < vod.list.length && PS.get().next === 'auto') { toast('Nächste Folge'); openVod(vod.list, vod.idx + 1, vod.show, vod.ctx); }
   else closePlayer();
 });
@@ -2919,6 +2935,11 @@ function renderMenu(focusIdx) {
       ? 'Ton- und Untertitelspuren in MKV/MP4-Dateien kann der eingebaute Player nicht umschalten.' + (canExternal() ? ' Dafür „In anderem Player öffnen“ wählen.' : '')
       : 'Keine weiteren Ton- oder Untertitelspuren.'}</p>`);
   }
+  const sl = sleepLabel();
+  rows.push(`<div class="pm-h">Schlaf-Timer${sl ? ' · ' + esc(sl) : ''}</div>`);
+  rows.push(item('Aus', !SLEEP.end && !SLEEP.ep, () => sleepSet(0, false)));
+  if (vod) rows.push(item(vod.ep.movie ? 'Nach diesem Film' : 'Nach dieser Folge', SLEEP.ep, () => sleepSet(0, true)));
+  SLEEP_OPTS.forEach(m => rows.push(item(`${m} Minuten`, false, () => sleepSet(m, false))));
   rows.push('<div class="pm-h">Mehr</div>');
   if (!vod && currentId) rows.push(item(isFav(currentId) ? '★ Aus Favoriten entfernen' : '☆ Zu Favoriten hinzufügen', false, () => toggleFav(currentId)));
   if (vod && canExternal()) rows.push(item('In anderem Player öffnen (z. B. VLC)', false, () => openExternalPlayer()));
@@ -2978,6 +2999,161 @@ $('#pMenu').addEventListener('click', e => {
   else if (e.target.closest('[data-pclose]')) closeMenu();
 });
 $('#pMenu').addEventListener('click', e => { if (menuMode === 'play') return; const b = e.target.closest('[data-pm]'); if (!b) return; const fn = menuActs[Number(b.dataset.pm)]; closeMenu(); if (fn) fn(); });
+
+/* ================= Statistik („Dein Rückblick“) ================= */
+const STV = { period: 'month', fetched: new Set() };
+const ST_PERIODS = [['week', '7 Tage'], ['month', 'Dieser Monat'], ['year', 'Dieses Jahr'], ['all', 'Gesamt']];
+const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const WDAYS = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+function fmtDur(sec) {
+  const m = Math.round((sec || 0) / 60);
+  if (m < 60) return `${m} Min.`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r && h < 10 ? `${h} Std. ${r} Min.` : `${h} Std.`;
+}
+function openStats() { show('stats'); renderStats(); const c = $(`#stChips [data-stp="${STV.period}"]`); if (c) c.focus({ preventScroll: true }); }
+function closeStats() {
+  show('settings');
+  const b = $('#statsOpen');
+  if (b) { b.focus({ preventScroll: true }); b.scrollIntoView({ block: 'center' }); }
+}
+function stRange(per) {
+  const now = new Date(), today = ST.day();
+  if (per === 'week') return [ST.day(Date.now() - 6 * 864e5), today];
+  if (per === 'month') return [ST.day(new Date(now.getFullYear(), now.getMonth(), 1)), today];
+  if (per === 'year') return [`${now.getFullYear()}-01-01`, today];
+  return ['0000-00-00', today];
+}
+/** Balken: Tage (7 Tage, Monat) bzw. Monate (Jahr, Gesamt). */
+function stBars(per, byDay) {
+  const out = [], now = new Date();
+  if (per === 'week' || per === 'month') {
+    const n = per === 'week' ? 7 : now.getDate();
+    for (let i = n - 1; i >= 0; i--) {
+      const t = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i), k = ST.day(t);
+      out.push({ l: per === 'week' ? WDAYS[t.getDay()] : String(t.getDate()), v: byDay[k] || 0, now: i === 0 });
+    }
+  } else {
+    let y = now.getFullYear(), m = per === 'year' ? 0 : now.getMonth() - 11;
+    const first = ST.firstDay(), fy = Number(first.slice(0, 4)), fm = Number(first.slice(5, 7)) - 1;
+    if (per === 'all') { const d0 = new Date(y, m, 1); if (fy * 12 + fm > d0.getFullYear() * 12 + d0.getMonth()) { y = fy; m = fm; } }
+    for (let d = new Date(y, m, 1); d <= now; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+      const pre = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      let v = 0; for (const k in byDay) if (k.startsWith(pre)) v += byDay[k];
+      out.push({ l: MONTHS[d.getMonth()] + (per === 'all' && d.getMonth() === 0 ? ` ${String(d.getFullYear()).slice(2)}` : ''), v, now: d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() });
+    }
+  }
+  return out;
+}
+function stFavTime(h) {
+  const parts = [['nachts', [23, 0, 1, 2, 3, 4]], ['morgens', [5, 6, 7, 8, 9, 10]], ['mittags', [11, 12, 13]], ['nachmittags', [14, 15, 16, 17]], ['abends', [18, 19, 20, 21, 22]]];
+  let best = null, bv = 0;
+  for (const [n, hs] of parts) { const v = hs.reduce((a, i) => a + (h[i] || 0), 0); if (v > bv) { bv = v; best = n; } }
+  const peak = h.indexOf(Math.max(...h));
+  return best ? { n: best, peak } : null;
+}
+function stTile(key, m, sec, eps, rank) {
+  const sub = [fmtDur(sec), eps ? `${eps} ${m.k === 'm' ? 'Mal' : eps > 1 ? 'Folgen' : 'Folge'}` : ''].filter(Boolean).join(' · ');
+  if (m.tm && /^(tv|movie):\d+$/.test(m.tm)) {
+    const [type, id] = m.tm.split(':');
+    return showTileHTML({ type, id: Number(id), title: m.n || '', orig: '', poster: m.p || null, backdrop: m.bd || null, overview: '', year: '', vote: 0, reason: sub }, rank);
+  }
+  return `<div class="tile show poster focusable" tabindex="0" data-stat="${esc(key)}">
+    <div class="art">${m.img ? `<img class="cov" src="${esc(m.img)}" alt="" loading="lazy" onerror="this.remove()">` : `<span class="ini">${esc(initials(m.n || '?'))}</span>`}
+      ${rank ? `<span class="rank">${rank}</span>` : ''}</div>
+    <div class="caption">${esc(m.n || '')}</div><div class="sub">${esc(sub)}</div></div>`;
+}
+function renderStats() {
+  const per = STV.period, [from, to] = stRange(per), S = ST.sum(from, to), meta = ST.load().meta;
+  $('#stChips').innerHTML = ST_PERIODS.map(([k, l]) => `<button class="chip focusable ${k === per ? 'active' : ''}" data-stp="${k}">${l}</button>`).join('');
+  const rows = Object.keys(S.t).map(k => ({ k, m: meta[k] || { n: k.replace(/^[a-z]+:/, ''), k: k.startsWith('l:') ? 'l' : 's' }, s: S.t[k], e: S.e[k] || 0 }));
+  const by = kind => rows.filter(r => r.m.k === kind).sort((a, b) => b.s - a.s);
+  const ser = by('s'), mov = by('m'), live = by('l');
+  const tot = rows.reduce((a, r) => a + r.s, 0), sum = l => l.reduce((a, r) => a + r.s, 0);
+  const eps = ser.reduce((a, r) => a + r.e, 0), films = mov.filter(r => r.e > 0).length;
+  if (tot < 60) {
+    $('#stBody').innerHTML = `<p class="empty">Für diesen Zeitraum gibt es noch keine Daten. Ab jetzt zählt StreamTV mit, was du schaust – auf allen Geräten mit deinem StreamTV-Konto.</p>`;
+    return;
+  }
+  // Nachladen fehlender Poster/Bilder (einmal pro Titel)
+  const need = rows.filter(r => r.m.tm && !r.m.p && !STV.fetched.has(r.m.tm) && TM.key()).slice(0, 12);
+  if (need.length) {
+    need.forEach(r => STV.fetched.add(r.m.tm));
+    Promise.all(need.map(r => { const [type, id] = r.m.tm.split(':'); return TM.details(type, Number(id)).then(d => { ST.meta[r.k] = Object.assign({}, meta[r.k], { p: d.poster_path || null, bd: d.backdrop_path || null }); }).catch(() => {}); }))
+      .then(() => { ST.flush(); if (state.view === 'stats') keepFocus(renderStats); });
+  }
+  const top = ser[0] || mov[0], tm = top && top.m;
+  const ft = stFavTime(S.h);
+  const bars = stBars(per, S.byDay), bmax = Math.max(1, ...bars.map(b => b.v));
+  const kpi = (v, l) => `<div class="st-kpi"><b>${v}</b><span>${l}</span></div>`;
+  const rail = (title, list, max) => list.length ? railHTML(title, list.slice(0, max).map((r, i) => stTile(r.k, r.m, r.s, r.e, i + 1)).join('')) : '';
+  const liveRows = live.slice(0, 12).map((r, i) => {
+    const ch = state.channels.find(c => c.name === r.m.n);
+    return `<div class="tile ${ch ? 'focusable' : ''}" ${ch ? `tabindex="0" data-card="${esc(ch.id)}"` : ''}>
+      <div class="art"><span class="ini">${esc(initials(r.m.n || '?'))}</span>${r.m.img ? `<img class="logo" src="${esc(r.m.img)}" alt="" loading="lazy" onerror="this.remove()">` : ''}<span class="rank st-rk">${i + 1}</span></div>
+      <div class="caption">${esc(r.m.n || '')}</div><div class="sub">${fmtDur(r.s)}</div></div>`;
+  }).join('');
+  $('#stBody').innerHTML = `
+    ${tm ? `<div class="pad"><div class="st-top">${tm.bd ? `<div class="st-top-bg" style="background-image:url('${TM.IMG}w1280${tm.bd}')"></div>` : ''}
+      <div class="st-top-in"><small>Deine Nr. 1 · ${esc(ST_PERIODS.find(x => x[0] === per)[1])}</small><h2>${esc(tm.n || '')}</h2>
+      <span>${fmtDur(top.s)}${top.e ? ` · ${top.e} ${tm.k === 'm' ? 'Mal gesehen' : top.e > 1 ? 'Folgen' : 'Folge'}` : ''}</span></div></div></div>` : ''}
+    <div class="pad"><div class="st-kpis">
+      ${kpi(fmtDur(tot), 'insgesamt geschaut')}
+      ${kpi(fmtDur(sum(ser)), `Serien · ${eps} Folge${eps === 1 ? '' : 'n'}`)}
+      ${kpi(fmtDur(sum(mov)), `Filme · ${films} gesehen`)}
+      ${kpi(fmtDur(sum(live)), 'Live-TV')}
+      ${ft ? kpi(ft.n[0].toUpperCase() + ft.n.slice(1), `am liebsten · meist gegen ${ft.peak} Uhr`) : ''}
+    </div></div>
+    <div class="pad"><div class="st-chart">${bars.map(b => `<div class="st-bar${b.now ? ' now' : ''}"><i style="height:${Math.max(b.v ? 3 : 0, b.v / bmax * 100).toFixed(1)}%"></i><span>${esc(b.l)}</span></div>`).join('')}</div></div>
+    ${rail('Meistgeschaute Serien', ser, 15)}
+    ${rail('Meistgeschaute Filme', mov, 15)}
+    ${liveRows ? railHTML('Meistgeschaute Sender', liveRows) : ''}`;
+}
+
+/* ================= Schlaf-Timer ================= */
+// Im Player-Menü (Optionen): nach X Minuten oder am Ende der Folge/des Films stoppen,
+// dann schwarzer „Gute Nacht“-Bildschirm; der Fernseher darf in seinen Standby gehen.
+const SLEEP = { end: 0, ep: false, warned: false, on: false, fadeT: null };
+const SLEEP_OPTS = [15, 30, 45, 60, 90, 120];
+function sleepLabel() {
+  if (SLEEP.ep) return vod && vod.ep.movie ? 'nach dem Film' : 'nach der Folge';
+  if (SLEEP.end) return `noch ${Math.max(1, Math.ceil((SLEEP.end - Date.now()) / 60000))} Min.`;
+  return '';
+}
+function sleepSet(min, ep) {
+  SLEEP.end = min ? Date.now() + min * 60000 : 0;
+  SLEEP.ep = !min && !!ep;
+  SLEEP.warned = false;
+  toast(min ? `🌙 Schlaf-Timer: ${min} Minuten` : SLEEP.ep ? `🌙 Schlaf-Timer: ${vod && vod.ep.movie ? 'nach diesem Film' : 'nach dieser Folge'}` : 'Schlaf-Timer aus');
+}
+function sleepFire() {
+  SLEEP.end = 0; SLEEP.ep = false; SLEEP.warned = false;
+  if (playerOpen) { try { saveVodPos(); video.pause(); } catch (e) {} closePlayer(); }
+  if (saverOpen) closeSaver();
+  SLEEP.on = true;
+  const el = $('#sleepScr');
+  el.classList.remove('hidden', 'dim');
+  clearTimeout(SLEEP.fadeT);
+  SLEEP.fadeT = setTimeout(() => el.classList.add('dim'), 12000);   // Hinweis ausblenden → ganz schwarz
+  if (document.activeElement) document.activeElement.blur();
+  try { if (bridge && typeof bridge.keepAwake === 'function') bridge.keepAwake(false); } catch (e) {}
+}
+function sleepWake() {
+  SLEEP.on = false; clearTimeout(SLEEP.fadeT);
+  $('#sleepScr').classList.add('hidden');
+  try { if (bridge && typeof bridge.keepAwake === 'function') bridge.keepAwake(true); } catch (e) {}
+  lastInput = Date.now();
+  const t = $('.tabbar button.active');
+  if (t) t.focus({ preventScroll: true });
+}
+setInterval(() => {
+  if (!SLEEP.end) return;
+  const left = SLEEP.end - Date.now();
+  if (left <= 60000 && !SLEEP.warned) { SLEEP.warned = true; if (playerOpen) toast('🌙 Schlaf-Timer: noch 1 Minute – Menü-Taste zum Verlängern'); }
+  if (left <= 0) sleepFire();
+}, 5000);
+document.addEventListener('keydown', e => { if (SLEEP.on) { e.preventDefault(); e.stopImmediatePropagation(); sleepWake(); } }, true);
+['click', 'touchstart'].forEach(ev => document.addEventListener(ev, e => { if (SLEEP.on) { e.preventDefault(); e.stopPropagation(); sleepWake(); } }, true));
 
 /* ================= Navigation per Fernbedienung ================= */
 function navigate(dir) {
@@ -3258,6 +3434,9 @@ document.addEventListener('click', e => {
   const sv = t.closest('[data-ser-act]');
   if (sv) { if (sv.dataset.serAct === 'retry') loadCatalog(sv.dataset.kind || 'series', true); return; }
   if (t.closest('#manageOpen')) { openManage(); return; }
+  if (t.closest('#statsOpen')) { openStats(); return; }
+  const stp = t.closest('[data-stp]');
+  if (stp) { STV.period = stp.dataset.stp; renderStats(); const c = $(`#stChips [data-stp="${STV.period}"]`); if (c) c.focus({ preventScroll: true }); return; }
   // Serien-Watchlist & TMDB (dynamisch gerendert)
   if (t.closest('#wlLogin')) return wlLogin();
   if (t.closest('#wlLogout')) { WL.logout(); TM.clear(); renderSettings(); loadDiscover(true); toast('Abgemeldet'); return; }

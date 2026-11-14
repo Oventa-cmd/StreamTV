@@ -188,6 +188,15 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun deviceName(): String = android.os.Build.MODEL ?: "TV"
 
+        /** Schlaf-Timer: Bildschirm darf wieder in den Standby des Fernsehers (false) bzw. bleibt an (true). */
+        @JavascriptInterface
+        fun keepAwake(on: Boolean) {
+            runOnUiThread {
+                if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+
         // ---------- App-Update direkt in der App ----------
         @JavascriptInterface fun canInstall(): Boolean = Updater.allowed(this@MainActivity)
         @JavascriptInterface fun openInstallPermission(): Boolean = Updater.openPermission(this@MainActivity)
