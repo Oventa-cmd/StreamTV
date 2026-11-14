@@ -895,3 +895,19 @@ html.pv .view.active{padding-bottom:75vh}
 .st-bar.now i{background:var(--red)}
 .st-bar span{font-size:.6rem;color:var(--mut2);white-space:nowrap}
 .tile .rank.st-rk{position:absolute;left:.5rem;top:.2rem;font-size:1.6rem;font-weight:800;color:rgba(255,255,255,.9)}
+
+/* ---------- Tempo auf dem Fernseher (App, nicht Web) ----------
+   Unscharf-Effekte (backdrop-filter) werden bei jedem Scroll-Frame neu berechnet und bremsen die TV-GPU.
+   Auf dem TV daher halbtransparente, aber feste Hintergründe – optisch fast gleich, deutlich flüssiger. */
+html:not(.web) *,html:not(.web) *::before,html:not(.web) *::after{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+html:not(.web) header.scrolled{background:rgba(var(--bgr),.96)}
+html:not(.web) .tabbar{background:rgba(48,48,54,.92)}
+html:not(.web) #osd,html:not(.web) .pmenu,html:not(.web) .clist,html:not(.web) #toast,html:not(.web) #status,html:not(.web) .ip-list,html:not(.web) .ctx-box{background:rgba(26,26,30,.95)}
+html:not(.web) .btn{background:rgba(70,70,76,.92)}
+html:not(.web) .btn.primary,html:not(.web) .btn:focus{background:#fff}
+/* Ansichtswechsel nur noch weich einblenden (kein Verschieben der ganzen Seite) */
+.view.active{animation:fade2 .22s ease-out}
+@keyframes fade2{from{opacity:0}to{opacity:1}}
+/* Fokus: nur die Vergrößerung animieren; der große Schatten wird nicht bei jedem Frame neu gemalt */
+.tile .art{transition:transform .4s var(--spring)}
+.rail{contain:layout paint}

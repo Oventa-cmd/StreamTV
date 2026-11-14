@@ -1822,7 +1822,25 @@ function closeManage() {
 
 /* ================= Ansichten ================= */
 const TAB_OF = { manage: 'settings', cats: 'settings', stats: 'settings' };   // Unterseiten der Einstellungen
+/* Reiterleiste: Beim schnellen Durchblättern mit ◀▶ wandert nur die Markierung mit;
+   die (teure) Ansicht wird erst gebaut, wenn man kurz auf einem Reiter stehen bleibt. */
+const TABP = { t: null, view: null };
+function tabPreview(btn) {
+  btn.focus({ preventScroll: true });
+  $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b === btn));
+  moveTabInd();
+  clearTimeout(TABP.t);
+  TABP.view = btn.dataset.view;
+  TABP.t = setTimeout(tabCommit, 240);
+}
+function tabCommit() {
+  clearTimeout(TABP.t);
+  const v = TABP.view;
+  TABP.t = null; TABP.view = null;
+  if (v && v !== state.view) show(v);
+}
 function show(view) {
+  if (TABP.t) { clearTimeout(TABP.t); TABP.t = null; TABP.view = null; }
   if (view === 'discover') view = 'series';                  // alte Links (Launcher)
   if (view === 'favorites') { view = 'live'; if (favList().length) { state.cat = FAV_CAT; renderLive(); } }
   state.view = view;
@@ -3157,8 +3175,8 @@ document.addEventListener('keydown', e => { if (SLEEP.on) { e.preventDefault(); 
 
 /* ================= Navigation per Fernbedienung ================= */
 function navigate(dir) {
-  const scope = sheetOpen ? $('#sheet') : document;
-  const all = [...scope.querySelectorAll('.focusable')].filter(el => el.getClientRects().length && !el.disabled && !(sheetOpen ? false : el.closest('.sheet')));
+  const nodes = sheetOpen ? $('#sheet').querySelectorAll('.focusable') : document.querySelectorAll('header .focusable, .view.active .focusable');
+  const all = [...nodes].filter(el => el.getClientRects().length && !el.disabled);
   if (!all.length) return;
   const cur = document.activeElement;
   if (!all.includes(cur)) { all[0].focus({ preventScroll: true }); return; }
@@ -3327,6 +3345,7 @@ document.addEventListener('click', e => { if (e.target && e.target.dataset && e.
 
 document.addEventListener('keydown', e => {
   if (playerOpen) { playerKey(e); return; }
+  if (TABP.t && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') tabCommit();   // erst wechseln, dann weiter (z. B. ▼ in die Ansicht)
   const a = document.activeElement;
   const typing = a && ((a.tagName === 'INPUT' && !a.readOnly) || a.tagName === 'TEXTAREA');
   if (sheetOpen && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); ip ? closeIptv() : closeSheet(); return; }
@@ -3336,7 +3355,7 @@ document.addEventListener('keydown', e => {
   // Reiterleiste: ◀ ▶ wechselt den Reiter sofort, ohne OK
   if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && a && a.closest && a.closest('.tabbar') && !sheetOpen) {
     const tabs = $$('.tabbar [data-view]'), nx = tabs[tabs.indexOf(a) + (e.key === 'ArrowRight' ? 1 : -1)];
-    if (nx) { e.preventDefault(); show(nx.dataset.view); return; }
+    if (nx) { e.preventDefault(); tabPreview(nx); return; }
   }
   // Billboard (Top-Empfehlungen): ◀ am ersten / ▶ am letzten Button blättert durch die Titel
   if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && a && a.closest && a.closest('#heroContent') && heroItems.length > 1 && !sheetOpen) {
