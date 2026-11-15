@@ -914,3 +914,12 @@ html:not(.web) .btn.primary,html:not(.web) .btn:focus{background:#fff}
 /* Fokus: nur die Vergrößerung animieren; der große Schatten wird nicht bei jedem Frame neu gemalt */
 .tile .art{transition:transform .4s var(--spring)}
 .rail{contain:layout paint}
+
+/* ---------- Kachel-Texte: in Rastern volle Spaltenbreite (auch Serien/Filme), Texte sauber einzeilig ---------- */
+.grid .tile,.grid .tile.show,.grid .tile.poster,.grid .tile.show.cont{width:auto;min-width:0}
+.tile .caption,.tile .sub{max-width:100%;line-height:1.3}
+.tile.poster .caption{font-size:.8rem;margin-top:.5rem}
+.tile.poster .sub{font-size:.68rem}
+.tile.show.poster .art .t{display:none}
+.tile.show.poster .art .ini{font-size:1.4rem}
+.tile .sub:empty::before{content:"\00a0"}

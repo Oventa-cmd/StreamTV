@@ -2474,11 +2474,9 @@ async function syncWatched(v) {
   try {
     const st = await WL.markWatched(job.type, job.id, job.season, job.num);
     const pe = VP.get(v.ep.id); if (pe && pe.m) { pe.m.wl = 1; VP.save(); }
-    if (st) toast(job.type === 'movie' ? '✓ Watchlist: Film als gesehen markiert'
-      : `✓ Watchlist: S${job.season} E${job.num} gesehen${st === 'done' ? ' – Serie abgeschlossen' : ''}`);
+    // bewusst keine Meldung – würde beim Schauen (ab 90 %) oben ins Bild ploppen
   } catch (e) {
-    WL.queue(job);
-    toast('Watchlist nicht erreichbar – wird später übertragen');
+    WL.queue(job);   // wird still später übertragen
   }
 }
 /* ---------- Weiterschauen ---------- */
