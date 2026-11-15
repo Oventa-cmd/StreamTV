@@ -2946,17 +2946,25 @@ function applyTrackPref() {
 }
 const canExternal = () => { try { return !!(bridge && typeof bridge.openExternal === 'function' && bridge.hasExternalPlayer()); } catch (e) { return false; } };
 let menuActs = [], menuMode = 'tracks';
-const PS_ROWS = [
-  { k: 'intro', label: 'Intro & Rückblick überspringen', desc: ['Kein Button', 'Button wird angezeigt', 'Wird automatisch übersprungen'] },
-  { k: 'next', label: 'Nächste Folge', desc: ['Kein Button, kein Auto-Play', 'Button ohne Countdown', 'Startet automatisch nach 10 s'] }
-];
+/* Bildschirm dimmen (z. B. zum Einschlafen): schwarze Ebene über dem Bild, gilt bis zum App-Neustart */
+const DIM_LV = [25, 50, 75, 100], DIM_NAMES = ['Dunkel', 'Gedimmt', 'Mittel', 'Normal'];
+let dimIdx = 3;
+function setDim(j) {
+  dimIdx = Math.max(0, Math.min(DIM_LV.length - 1, j));
+  $('#pDim').style.opacity = String(1 - DIM_LV[dimIdx] / 100);
+}
 const PS_VALS = ['off', 'show', 'auto'], PS_NAMES = ['Aus', 'Anzeigen', 'Automatisch'];
+const psRow = (k, label, desc) => ({ label, desc, names: PS_NAMES, get: () => Math.max(0, PS_VALS.indexOf(PS.get()[k])), set: j => PS.set(k, PS_VALS[j]), skip: true });
+const PS_ROWS = [
+  { label: 'Helligkeit', desc: DIM_LV.map(v => v === 100 ? 'Normale Helligkeit' : `Bild auf ${v} % gedimmt`), names: DIM_NAMES, get: () => dimIdx, set: setDim },
+  psRow('intro', 'Intro & Rückblick überspringen', ['Kein Button', 'Button wird angezeigt', 'Wird automatisch übersprungen']),
+  psRow('next', 'Nächste Folge', ['Kein Button, kein Auto-Play', 'Button ohne Countdown', 'Startet automatisch nach 10 s'])
+];
 function renderPlaySettings(focusIdx) {
-  const p = PS.get();
   const rows = PS_ROWS.map((r, ri) => {
-    const i = Math.max(0, PS_VALS.indexOf(p[r.k]));
+    const i = r.get(), n = r.names.length;
     return `<button class="pm-item ps-row" data-ps="${ri}"><span class="ps-l">${r.label}</span>
-      <span class="ps-seg" style="--i:${i}"><i></i>${PS_NAMES.map((n, j) => `<span class="${j === i ? 'on' : ''}" data-pv="${j}">${n}</span>`).join('')}</span>
+      <span class="ps-seg" style="--i:${i};--n:${n}"><i></i>${r.names.map((nm, j) => `<span class="${j === i ? 'on' : ''}" data-pv="${j}">${nm}</span>`).join('')}</span>
       <span class="ps-d">${r.desc[i]}</span></button>`;
   });
   $('#pMenu').innerHTML = `<div class="pm-title">Wiedergabe</div>${rows.join('')}<button class="pm-item muted" data-pclose>Schließen</button>`;
@@ -2964,10 +2972,10 @@ function renderPlaySettings(focusIdx) {
   if (f) f.focus({ preventScroll: true });
 }
 function setPs(ri, j) {
-  const r = PS_ROWS[ri];
-  PS.set(r.k, PS_VALS[(j + 3) % 3]);
+  const r = PS_ROWS[ri], n = r.names.length;
+  r.set((j + n) % n);
   renderPlaySettings(ri);
-  if (vod) { hideSkip(); delete vod.hid.intro; delete vod.hid.recap; }   // greift sofort, sobald das Menü zu ist
+  if (r.skip && vod) { hideSkip(); delete vod.hid.intro; delete vod.hid.recap; }   // greift sofort, sobald das Menü zu ist
 }
 function settingsKey(e) {
   const k = e.key, btns = $$('#pMenu .pm-item'), i = btns.indexOf(document.activeElement);
@@ -2980,9 +2988,9 @@ function settingsKey(e) {
   }
   const b = document.activeElement, ri = b && b.dataset.ps != null ? Number(b.dataset.ps) : -1;
   if (ri < 0) { if (k === 'Enter' || k === ' ') closeMenu(); return; }
-  const cur = PS_VALS.indexOf(PS.get()[PS_ROWS[ri].k]);
+  const cur = PS_ROWS[ri].get(), max = PS_ROWS[ri].names.length - 1;
   if (k === 'ArrowLeft') { if (cur > 0) setPs(ri, cur - 1); }
-  else if (k === 'ArrowRight') { if (cur < 2) setPs(ri, cur + 1); }
+  else if (k === 'ArrowRight') { if (cur < max) setPs(ri, cur + 1); }
   else if (k === 'Enter' || k === ' ') setPs(ri, cur + 1);   // OK klickt reihum durch
 }
 function renderMenu(focusIdx) {
@@ -3003,6 +3011,10 @@ function renderMenu(focusIdx) {
     rows.push(`<p class="pm-note">${engine === 'native'
       ? 'Ton- und Untertitelspuren in MKV/MP4-Dateien kann der eingebaute Player nicht umschalten.' + (canExternal() ? ' Dafür „In anderem Player öffnen“ wählen.' : '')
       : 'Keine weiteren Ton- oder Untertitelspuren.'}</p>`);
+  }
+  if (!vod) {
+    rows.push('<div class="pm-h">Helligkeit</div>');
+    DIM_LV.forEach((v, j) => rows.push(item(`${DIM_NAMES[j]}${v < 100 ? ` (${v} %)` : ''}`, dimIdx === j, () => setDim(j))));
   }
   const sl = sleepLabel();
   rows.push(`<div class="pm-h">Schlaf-Timer${sl ? ' · ' + esc(sl) : ''}</div>`);
@@ -3064,7 +3076,7 @@ $('#pMenu').addEventListener('click', e => {
   if (menuMode !== 'play') return;
   e.stopPropagation();
   const r = e.target.closest('[data-ps]'), v = e.target.closest('[data-pv]');
-  if (r) setPs(Number(r.dataset.ps), v ? Number(v.dataset.pv) : PS_VALS.indexOf(PS.get()[PS_ROWS[Number(r.dataset.ps)].k]) + 1);
+  if (r) setPs(Number(r.dataset.ps), v ? Number(v.dataset.pv) : PS_ROWS[Number(r.dataset.ps)].get() + 1);
   else if (e.target.closest('[data-pclose]')) closeMenu();
 });
 $('#pMenu').addEventListener('click', e => { if (menuMode === 'play') return; const b = e.target.closest('[data-pm]'); if (!b) return; const fn = menuActs[Number(b.dataset.pm)]; closeMenu(); if (fn) fn(); });
