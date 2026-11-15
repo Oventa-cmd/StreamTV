@@ -233,14 +233,15 @@ const VP = {
   /** Eintrag für Weiterschauen – angefangene Folge oder nächste Folge der Serie. */
   entry(id) { return this.get(id) || this.virt[id] || null; },
   /** Pro Serie ein Eintrag, neueste zuerst: angefangene Folge – oder, wenn die letzte fertig ist, die nächste Folge. */
+  STALE: 14 * 864e5,   // 14 Tage nicht geschaut → aus „Weiterschauen“ ausblenden (Fortschritt bleibt erhalten)
   continueList(max = 15) {
-    const s = this.all(), seen = new Set(), out = [];
+    const s = this.all(), seen = new Set(), out = [], old = Date.now() - this.STALE;
     this.virt = {};
     Object.keys(s).filter(id => s[id].m).sort((a, b) => s[b].at - s[a].at).forEach(id => {
       const v = s[id], k = v.m.acc + '|' + v.m.sid;
       if (seen.has(k)) return;
       seen.add(k);
-      if (v.m.hidden) return;
+      if (v.m.hidden || !(v.at > old)) return;
       if (!this.done(id)) { if (v.pos > 30) out.push(Object.assign({ id }, v)); return; }
       const n = v.m.next;
       if (v.m.movie || !n || !n.id || this.done(n.id)) return;
