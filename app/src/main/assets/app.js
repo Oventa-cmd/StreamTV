@@ -2173,6 +2173,7 @@ function openVod(list, idx, show, ctx) {
   updateProg();
   loadStream(ep.url);
   showOsd();
+  if (!ep.movie && list.length === 1) { const v = vod; setTimeout(() => ensureNext(v).then(() => { if (vod === v) renderVosd(); }), 3000); }
 }
 function saveVodPos(asDone) {
   asDone = asDone || !!(vod && vod.doneMark);
@@ -2259,7 +2260,12 @@ function showSkip(seg) {
     doSkip(true);
     return;
   }
-  const next = seg.kind === 'outro' && vod && !vod.ep.movie && vod.idx + 1 < vod.list.length && seg.target == null;
+  const next = seg.kind === 'outro' && seg.target == null && hasNext(vod);
+  // Folgenliste unvollständig (z. B. „Weiterschauen“ ohne geladene Serie) → nächste Folge nachladen, Button dann umbeschriften
+  if (seg.kind === 'outro' && seg.target == null && !next && vod && !vod.ep.movie) {
+    const v = vod;
+    ensureNext(v).then(ok => { if (ok && vod === v && skipSeg === seg) { skipSeg = null; showSkip(seg); } });
+  }
   const autoNext = next && segMode(seg) === 'auto';
   b.innerHTML = seg.kind === 'intro' ? 'Intro überspringen'
     : seg.kind === 'recap' ? 'Rückblick überspringen'
@@ -2360,10 +2366,49 @@ function doSkip(quiet) {
   vod.doneMark = true;
   saveVodPos(true);
   if (!vod.synced) syncWatched(vod);
-  if (!vod.ep.movie && vod.idx + 1 < vod.list.length) { const v = vod; openVod(v.list, v.idx + 1, v.show, v.ctx); }
+  playNextOrClose(vod, true);
+}
+const hasNext = v => !!v && !v.ep.movie && v.idx + 1 < v.list.length;
+/** Fehlt die nächste Folge in der Liste, komplette Serie beim Anbieter nachladen (Rückfall: gemerkte nächste Folge). */
+async function ensureNext(v) {
+  if (!v || v.ep.movie) return false;
+  if (hasNext(v)) return true;
+  if (v.nextBusy) return v.nextBusy;
+  return (v.nextBusy = (async () => {
+    const c = v.ctx || {}, acc = c.acc && XS.accounts().find(a => a.key === c.acc);
+    if (acc && c.sid) {
+      try {
+        const info = await Promise.race([XS.info(acc, c.sid), new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 12000))]);
+        const all = info.seasons.flatMap(s => s.eps), i = all.findIndex(e => e.id === v.ep.id);
+        if (i >= 0 && i + 1 < all.length) { v.list = all; v.idx = i; return true; }
+        if (i >= 0) return false;   // wirklich letzte Folge
+      } catch (e) {}
+    }
+    const pe = VP.get(v.ep.id), n = pe && pe.m && pe.m.next;
+    if (n && n.url && !hasNext(v)) { v.list = [v.ep, { ...n, plot: '' }]; v.idx = 0; return true; }
+    return hasNext(v);
+  })().finally(() => { v.nextBusy = null; }));
+}
+/** Am Ende / „Nächste Folge“: nächste Folge abspielen, sonst Player schließen. */
+async function playNextOrClose(v, force) {
+  if (!v.ep.movie && !hasNext(v)) {
+    toast('Lade nächste Folge …');
+    await ensureNext(v);
+    if (vod !== v || !playerOpen) return;
+  }
+  if (hasNext(v) && (force || PS.get().next === 'auto')) { if (!force) toast('Nächste Folge'); openVod(v.list, v.idx + 1, v.show, v.ctx); }
   else closePlayer();
 }
 $('#pSkip').addEventListener('click', e => { e.stopPropagation(); doSkip(); });
+/* Position des Buttons an die Leiste koppeln (CSS „~“ wird von der WebView nach dem Ausblenden nicht immer neu berechnet) */
+function syncSkipPos() {
+  const b = $('#pSkip');
+  b.classList.toggle('up-v', !!vod && !$('#vosd').classList.contains('hide'));
+  b.classList.toggle('up-l', !vod && !$('#osd').classList.contains('hide'));
+}
+new MutationObserver(syncSkipPos).observe($('#vosd'), { attributes: true, attributeFilter: ['class'] });
+new MutationObserver(syncSkipPos).observe($('#osd'), { attributes: true, attributeFilter: ['class'] });
+new MutationObserver(syncSkipPos).observe($('#player'), { attributes: true, attributeFilter: ['class'] });
 
 /* ---------- Watchlist-Sync (ab 90 % gesehen) ---------- */
 /** TMDB-ID zu einem Anbieter-Titel suchen, z. B. „The Terminal List (2022) (US) (DIE ABSCHUSSLISTE)“. */
@@ -2523,7 +2568,7 @@ function updateProg() {
 const VC = { zone: 'bar', sel: 0 };
 const SC = { on: false, pos: 0, from: 0, holdStart: 0, last: 0, t: null };
 function vButtons() {
-  const next = vod && !vod.ep.movie && vod.idx + 1 < vod.list.length;
+  const next = vod && !vod.ep.movie && (hasNext(vod) || (vod.ctx && vod.ctx.sid && vod.list.length === 1));
   $('#vNext').classList.toggle('hidden', !next);
   return $$('#vosd .v-btns .vb').filter(b => !b.classList.contains('hidden'));
 }
@@ -2687,7 +2732,7 @@ video.addEventListener('ended', () => {
   saveVodPos();
   if (!vod.synced) syncWatched(vod);
   if (SLEEP.ep) { sleepFire(); return; }
-  if (!vod.ep.movie && vod.idx + 1 < vod.list.length && PS.get().next === 'auto') { toast('Nächste Folge'); openVod(vod.list, vod.idx + 1, vod.show, vod.ctx); }
+  if (!vod.ep.movie && PS.get().next === 'auto') playNextOrClose(vod, false);
   else closePlayer();
 });
 function closePlayer(fromPop) {
@@ -2720,6 +2765,12 @@ function zap(step) {
   if (vod) {
     if (vod.ep.movie) return;
     if (step > 0) noteOutro(vod);
+    if (step > 0 && !hasNext(vod)) {
+      const v = vod;
+      toast('Lade nächste Folge …');
+      ensureNext(v).then(ok => { if (vod !== v) return; ok ? openVod(v.list, v.idx + 1, v.show, v.ctx) : toast('Letzte Folge'); });
+      return;
+    }
     const i = vod.idx + step;
     if (i < 0 || i >= vod.list.length) { toast(step > 0 ? 'Letzte Folge' : 'Erste Folge'); return; }
     return openVod(vod.list, i, vod.show, vod.ctx);

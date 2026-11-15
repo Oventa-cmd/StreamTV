@@ -322,7 +322,7 @@ video::cue{background:rgba(0,0,0,.65);font-family:Inter,sans-serif;font-size:1.0
 #player.vod .skip{background:rgba(30,30,32,.78);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.35),0 14px 40px rgba(0,0,0,.6)}
 #player.vod .skip.sel{background:#fff;color:#000;transform:scale(1.08);box-shadow:0 0 0 3px rgba(255,255,255,.45),0 14px 40px rgba(0,0,0,.6)}
 .skip span{font-size:.9rem}
-#osd:not(.hide) ~ .skip{bottom:10.4rem}
+#pSkip.up-l{bottom:10.4rem}
 @keyframes skipIn{from{opacity:0;transform:translateY(.8rem) scale(.96)}to{opacity:1;transform:none}}
 
 /* ---------- Senderliste im Player ---------- */
@@ -647,7 +647,7 @@ html.nv #video{visibility:hidden}
 .vb.txt svg{width:1.2rem;height:1.2rem}
 .vb.sel{background:#fff;color:#000;transform:scale(1.1)}
 .vb.hidden{display:none}
-#vosd:not(.hide) ~ .skip{bottom:8.6rem}
+#pSkip.up-v{bottom:8.6rem}
 .v-top{position:absolute;top:1.2rem;right:var(--pad);pointer-events:auto}
 .vosd::after{content:"";position:absolute;left:0;right:0;top:0;height:7rem;background:linear-gradient(to bottom,rgba(0,0,0,.45),transparent);pointer-events:none;z-index:-1}
 #vSet svg{width:1.5rem;height:1.5rem;transition:transform .5s var(--ease)}
