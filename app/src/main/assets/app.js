@@ -3788,6 +3788,8 @@ window.onAppResume = () => {
   // Berechtigung „Unbekannte Apps“ gerade erteilt → Update direkt fortsetzen
   if (UPD.inst && UPD.inst.st === 'perm' && bridge && bridge.canInstall && bridge.canInstall()) setTimeout(installUpdate, 400);
   if (UPD.inst && UPD.inst.st === 'confirm') { UPD.inst = null; renderUpdate(); }
+  if (LUPD.inst && LUPD.inst.st === 'perm' && bridge && bridge.canInstall && bridge.canInstall()) setTimeout(installLauncher, 400);
+  if (LUPD.inst && LUPD.inst.st === 'confirm') { LUPD.inst = null; renderUpdate(); }
   SYNC.run(false); renderVpn(); setTimeout(renderVpn, 2500); if (playerOpen && (RC.waiting || RC.dead)) retryNow();
   if (!playerOpen) setTimeout(() => checkUpdate(false), 1500); };
 
@@ -3800,6 +3802,33 @@ const UPD = {
   get() { if (!this.s) { try { this.s = JSON.parse(localStorage.getItem(this.STORE) || '{}'); } catch (e) { this.s = {}; } } return this.s; },
   save() { try { localStorage.setItem(this.STORE, JSON.stringify(this.s)); } catch (e) {} }
 };
+/** TV-Launcher (eigenes Repo) – wird ebenfalls über StreamTV aktualisiert. */
+const LUPD = {
+  STORE: 'streamtv.update.launcher',
+  API: 'https://api.github.com/repos/Oventa-cmd/TV-Launcher/releases/latest',
+  s: null, inst: null,
+  get() { if (!this.s) { try { this.s = JSON.parse(localStorage.getItem(this.STORE) || '{}'); } catch (e) { this.s = {}; } } return this.s; },
+  save() { try { localStorage.setItem(this.STORE, JSON.stringify(this.s)); } catch (e) {} }
+};
+const launcherSupported = () => !!(bridge && typeof bridge.installLauncher === 'function');
+function launcherVersion() { try { return launcherSupported() ? String(bridge.launcherVersion() || '') : ''; } catch (e) { return ''; } }
+function launcherUpdateAvailable() {
+  const u = LUPD.get(), cur = runOf(launcherVersion());
+  return !!(cur && u.latest && u.apk && runOf(u.latest) > cur);
+}
+/** Neueste Launcher-Version von GitHub holen (APK-Link aus den Release-Dateien). */
+async function checkLauncher() {
+  const u = LUPD.get();
+  try {
+    const r = await request('GET', LUPD.API, { headers: { Accept: 'application/vnd.github+json' }, timeout: 15000 });
+    if (r.status === 404) throw new Error('Launcher-Releases nicht erreichbar – ist das Repo TV-Launcher öffentlich?');
+    if (r.status !== 200) throw new Error(r.status === 403 ? 'GitHub-Limit erreicht – später erneut versuchen' : 'GitHub antwortet nicht (' + r.status + ')');
+    const j = JSON.parse(r.text);
+    const a = (j.assets || []).find(x => /\.apk$/i.test(x.name || ''));
+    Object.assign(u, { at: Date.now(), latest: j.tag_name || '', apk: a ? a.browser_download_url : '', err: a ? '' : 'Im Release ist kein APK' });
+  } catch (e) { Object.assign(u, { at: Date.now(), err: e.message }); }
+  LUPD.save();
+}
 /** Laufnummer aus „v1.0.42“ bzw. „1.0.42“. */
 const runOf = v => { const m = String(v || '').match(/(\d+)\.(\d+)\.(\d+)/); return m ? Number(m[3]) : 0; };
 function appVersion() { try { return bridge ? String(bridge.appVersion() || '') : ''; } catch (e) { return ''; } }
@@ -3819,11 +3848,18 @@ async function checkUpdate(manual) {
     const j = JSON.parse(r.text);
     Object.assign(u, { at: Date.now(), latest: j.tag_name || '', date: j.published_at || '', name: j.name || '', err: '' });
     UPD.save();
+    if (launcherSupported() && launcherVersion()) {
+      const had = launcherUpdateAvailable() && LUPD.get().latest;
+      await checkLauncher();
+      const L = LUPD.get();
+      if (launcherUpdateAvailable() && (manual || had !== L.latest) && !updateAvailable())
+        toast(`TV-Launcher-Update ${L.latest.replace(/^v/, '')} verfügbar – Einstellungen → App-Update`);
+    }
     if (updateAvailable()) {
       if (!manual && bridge && typeof bridge.installUpdate === 'function') updPrompt(u.latest.replace(/^v/, ''));
       else toast(`Update verfügbar: Version ${u.latest.replace(/^v/, '')} – unter „Einstellungen → App-Update“ installieren`);
     }
-    else if (manual) toast(appVersion() ? 'StreamTV ist aktuell' : 'Neueste Version: ' + (u.latest || '–'));
+    else if (manual && !launcherUpdateAvailable()) toast(appVersion() ? 'StreamTV ist aktuell' : 'Neueste Version: ' + (u.latest || '–'));
   } catch (e) {
     u.at = Date.now(); u.err = e.message; UPD.save();
     if (manual) toast('Update-Prüfung fehlgeschlagen: ' + e.message);
@@ -3853,15 +3889,52 @@ function renderUpdate() {
   }
   if (avail) html += `<div class="row-item upd-cmd"><div class="meta"><b>${inApp ? 'Alternativ am PC (ADB)' : 'Am PC aktualisieren (ADB)'}</b>
       <code>curl.exe -L -o StreamTV.apk ${esc(UPD.APK)}\nadb connect &lt;IP-des-Fernsehers&gt;:&lt;Port&gt;\nadb install -r StreamTV.apk</code></div></div>`;
+  html += renderLauncherUpdate();
   const hadFocus = document.activeElement && document.activeElement.id;
   box.innerHTML = html;
   if (hadFocus && box.querySelector('#' + hadFocus)) box.querySelector('#' + hadFocus).focus({ preventScroll: true });
   $('#updFoot').textContent = avail ? 'Die IP steht unter Einstellungen → Netzwerk (Fire TV: Mein Fire TV → Info → Netzwerk). Einstellungen und Daten bleiben beim Update erhalten.' : '';
-  $$('.tabbar [data-view="settings"]').forEach(b => b.classList.toggle('badge', avail));
+  $$('.tabbar [data-view="settings"]').forEach(b => b.classList.toggle('badge', avail || launcherUpdateAvailable()));
+}
+/** Zeile(n) für den TV-Launcher unter „App-Update“. */
+function renderLauncherUpdate() {
+  if (!launcherSupported()) return '';
+  const cur = launcherVersion();
+  if (!cur) return '';   // Launcher nicht installiert
+  const L = LUPD.get(), avail = launcherUpdateAvailable();
+  const latest = L.latest ? L.latest.replace(/^v/, '') : '';
+  const I = LUPD.inst || {};
+  const busy = I.st === 'progress';
+  const label = busy ? (I.pct >= 0 ? `Lade … ${I.pct} %` : 'Lade …')
+    : I.st === 'confirm' ? 'Bitte am Fernseher bestätigen …' : 'Launcher aktualisieren';
+  const sub = I.st === 'error' ? `<span class="err">${esc(I.msg)}</span>`
+    : I.st === 'perm' ? 'Einmalig erlauben: „StreamTV“ das Installieren unbekannter Apps zulassen, dann zurück und erneut drücken.'
+    : `Installiert: ${esc(cur)}${latest ? ' · Neueste: ' + esc(latest) : ''}${L.err ? ` · <span class="err">${esc(L.err)}</span>` : ''}`;
+  return `<div class="row-item"><div class="meta">
+      <b>${avail ? `TV-Launcher: Update ${esc(latest)} verfügbar` : 'TV-Launcher ist aktuell'}</b>
+      <small>${sub}</small>
+      ${busy && I.pct >= 0 ? `<span class="ip-pbar upd-bar"><i style="width:${I.pct}%"></i></span>` : ''}
+    </div>${avail ? `<div class="actions"><button class="mini primary focusable" id="lupdInstall" ${busy ? 'disabled' : ''}>${label}</button></div>` : ''}</div>`;
+}
+/** Launcher-APK laden und installieren (Android-Seite: Updater.kt). */
+function installLauncher() {
+  const L = LUPD.get();
+  if (!launcherSupported() || !L.apk) return;
+  if (LUPD.inst && LUPD.inst.st === 'progress') return;
+  if (!bridge.canInstall()) {
+    LUPD.inst = { st: 'perm' }; renderUpdate();
+    toast('Bitte „Unbekannte Apps installieren“ für StreamTV erlauben');
+    setTimeout(() => bridge.openInstallPermission(), 700);
+    return;
+  }
+  LUPD.inst = { st: 'progress', pct: 0 };
+  if (!bridge.installLauncher(L.apk)) LUPD.inst = { st: 'error', msg: 'Es läuft bereits ein Download' };
+  renderUpdate();
 }
 document.addEventListener('click', e => {
   if (e.target.closest('#updCheck')) checkUpdate(true);
   if (e.target.closest('#updInstall')) installUpdate();
+  if (e.target.closest('#lupdInstall')) installLauncher();
 });
 /** Update direkt in der App laden und installieren (Android-Seite: Updater.kt). */
 function installUpdate() {
@@ -3886,8 +3959,16 @@ function updPrompt(ver) {
   show('settings');
   setTimeout(() => { const b = $('#updInstall'); if (b) { b.focus({ preventScroll: true }); b.scrollIntoView({ block: 'center' }); } }, 300);
 }
-// Rückmeldungen der App: progress <%> · confirm · done · error <Text>
-window.onUpdState = (st, info) => {
+// Rückmeldungen der App: progress <%> · confirm · done · error <Text>  (which: app | launcher)
+window.onUpdState = (st, info, which) => {
+  if (which === 'launcher') {
+    if (st === 'progress') { const pct = Number(info); if (LUPD.inst && LUPD.inst.st === 'progress' && LUPD.inst.pct === pct) return; LUPD.inst = { st, pct }; }
+    else if (st === 'error') { LUPD.inst = { st, msg: info || 'Fehler' }; toast('Launcher-Update: ' + (info || 'Fehler')); }
+    else if (st === 'done') { LUPD.inst = null; toast('TV-Launcher aktualisiert'); }
+    else LUPD.inst = { st };
+    if (state.view === 'settings') renderUpdate();
+    return;
+  }
   if (st === 'progress') { const pct = Number(info); if (UPD.inst && UPD.inst.st === 'progress' && UPD.inst.pct === pct) return; UPD.inst = { st, pct }; }
   else if (st === 'error') { UPD.inst = { st, msg: info || 'Fehler' }; toast('Update: ' + (info || 'Fehler')); }
   else if (st === 'done') { UPD.inst = null; toast('Update installiert'); }
@@ -3975,7 +4056,7 @@ if (state.settings.autoRefresh) {
  * Import: Datei an dieselbe Stelle kopieren, dann --es backup import
  * Enthält Quellen, Kanäle, Favoriten, Einstellungen, Weiterschauen-Fortschritt,
  * Intro-Marken, Tonspur-Wahl, Erinnerungen und das Watchlist-Konto. Caches nicht. */
-const BACKUP_SKIP = ['streamtv.epg', 'streamtv.tmdb', 'streamtv.sport', 'streamtv.update'];
+const BACKUP_SKIP = ['streamtv.epg', 'streamtv.tmdb', 'streamtv.sport', 'streamtv.update', 'streamtv.update.launcher'];
 function exportBackup() {
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {

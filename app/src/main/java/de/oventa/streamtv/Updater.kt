@@ -16,12 +16,21 @@ import java.net.URL
 
 /**
  * App-Update direkt in der App: APK von GitHub laden und per PackageInstaller installieren.
- * Rückmeldungen an die Oberfläche über report(state, info):
- *   progress <Prozent> · confirm · done · error <Text>
+ * Kann StreamTV selbst und den TV-Launcher (de.oventa.tvlauncher) aktualisieren.
+ * Rückmeldungen an die Oberfläche über report(state, info, which):
+ *   progress <Prozent> · confirm · done · error <Text>   – which = "app" oder "launcher"
  */
 object Updater {
+    const val LAUNCHER = "de.oventa.tvlauncher"
     @Volatile private var busy = false
-    var report: ((String, String) -> Unit)? = null
+    /** Welche App gerade aktualisiert wird: "app" (StreamTV) oder "launcher". */
+    @Volatile var which = "app"
+    var report: ((String, String, String) -> Unit)? = null
+
+    /** Installierte Version einer App ("" = nicht installiert). */
+    fun versionOf(ctx: Context, pkg: String): String = try {
+        ctx.packageManager.getPackageInfo(pkg, 0).versionName ?: ""
+    } catch (e: Exception) { "" }
 
     /** Darf StreamTV Apps installieren? (ab Android 8 einmalig in den Einstellungen erlauben) */
     fun allowed(ctx: Context): Boolean =
@@ -39,16 +48,19 @@ object Updater {
         return false
     }
 
-    fun start(ctx: Context, url: String): Boolean {
+    /** pkg = null → StreamTV selbst, sonst z. B. LAUNCHER. */
+    fun start(ctx: Context, url: String, pkg: String? = null): Boolean {
         if (busy) return false
         busy = true
         val app = ctx.applicationContext
+        val target = pkg ?: app.packageName
+        which = if (target == app.packageName) "app" else "launcher"
         Thread {
             try {
-                install(app, url)
+                install(app, url, target)
             } catch (e: Exception) {
                 Log.w("StreamTV", "Update fehlgeschlagen", e)
-                report?.invoke("error", e.message ?: e.javaClass.simpleName)
+                report?.invoke("error", e.message ?: e.javaClass.simpleName, which)
                 busy = false
             }
         }.start()
@@ -78,20 +90,20 @@ object Updater {
         throw IOException("Zu viele Weiterleitungen")
     }
 
-    private fun install(ctx: Context, url: String) {
+    private fun install(ctx: Context, url: String, target: String) {
         val conn = open(url)
         val total = conn.contentLength.toLong()
         val pi = ctx.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        params.setAppPackageName(ctx.packageName)
-        // Ab Android 12: Updates ohne Bestätigungsdialog, sobald StreamTV selbst als Installer eingetragen ist
-        // (nach dem ersten Update aus der App heraus). Sonst fragt das System wie gewohnt nach.
+        params.setAppPackageName(target)
+        // Ab Android 12: Updates ohne Bestätigungsdialog, sobald StreamTV als Installer der App eingetragen ist
+        // (nach dem ersten Update aus StreamTV heraus). Sonst fragt das System wie gewohnt nach.
         if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         if (Build.VERSION.SDK_INT >= 26) params.setInstallReason(android.content.pm.PackageManager.INSTALL_REASON_USER)
         val id = pi.createSession(params)
         val session = pi.openSession(id)
         try {
-            session.openWrite("StreamTV.apk", 0, if (total > 0) total else -1).use { out ->
+            session.openWrite(if (which == "app") "StreamTV.apk" else "TV-Launcher.apk", 0, if (total > 0) total else -1).use { out ->
                 conn.inputStream.use { inp ->
                     val buf = ByteArray(64 * 1024)
                     var done = 0L
@@ -102,7 +114,7 @@ object Updater {
                         out.write(buf, 0, n)
                         done += n
                         val pct = if (total > 0) (done * 100 / total).toInt() else -1
-                        if (pct != last) { last = pct; report?.invoke("progress", pct.toString()) }
+                        if (pct != last) { last = pct; report?.invoke("progress", pct.toString(), which) }
                     }
                 }
                 session.fsync(out)
@@ -123,7 +135,7 @@ object Updater {
 
     fun finished(state: String, info: String) {
         if (state != "confirm") busy = false
-        report?.invoke(state, info)
+        report?.invoke(state, info, which)
     }
 }
 

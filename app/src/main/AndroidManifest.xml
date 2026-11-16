@@ -8,6 +8,8 @@
 
     <queries>
         <package android:name="ch.protonvpn.android" />
+        <!-- TV-Launcher: installierte Version lesen und aktualisieren -->
+        <package android:name="de.oventa.tvlauncher" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:mimeType="video/*" />
