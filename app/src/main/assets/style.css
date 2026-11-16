@@ -812,6 +812,8 @@ html.web #swNative,html.web #swNativeLive{display:none}
 html.web #extBar{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);z-index:5;display:flex;gap:.7rem;flex-wrap:wrap;justify-content:center;max-width:92vw}
 html.web #extBar .btn{text-decoration:none;background:rgba(255,255,255,.16);color:#fff;padding:.8rem 1.3rem;border-radius:999px;font-weight:700;-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
 html.web #extBar .btn:first-child{background:#fff;color:#000}
+html.web #extBar .ext-done{flex-basis:100%;display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap;margin-top:.4rem}
+html.web #extBar .ext-done .btn{background:rgba(52,199,89,.28);color:#fff}
 
 /* ---------- Kompakte Kacheln: Serien & Filme hochkant, mehr pro Reihe, weniger Luft ---------- */
 .rail{gap:.65rem;padding:.9rem var(--pad) 1.1rem}

@@ -2185,6 +2185,28 @@ function saveVodPos(asDone) {
     next: e.movie ? null : nextOf(vod.list[vod.idx + 1])
   } : null);
 }
+/** Browser/VLC: Folge ohne eigene Wiedergabe als gesehen markieren (Fortschritt, Weiterschauen, Watchlist). */
+function markVodDone(v) {
+  if (!v) return;
+  const e = v.ep, c = v.ctx, old = VP.get(e.id);
+  const d = e.dur || (old && old.dur) || (e.movie ? 7200 : 2700);
+  VP.set(e.id, d, d, c ? {
+    show: c.name || v.show, movie: !!e.movie, season: e.season, num: e.num, title: e.title, url: e.url, img: c.img || '', acc: c.acc, sid: c.sid, src: c.src || '', tmdb: c.tmdb || '',
+    next: e.movie ? null : nextOf(v.list[v.idx + 1])
+  } : null);
+  v.doneMark = true;
+  if (!v.synced) syncWatched(v);
+  try { SYNC.run(false); } catch (x) {}
+}
+/** Knöpfe unter „In VLC öffnen“: next = gleich die nächste Folge in VLC starten. */
+window.extDone = next => {
+  const v = vod;
+  if (!v) return;
+  markVodDone(v);
+  if (next && hasNext(v)) { toast('✓ Gesehen – nächste Folge'); playNextOrClose(v, true); }
+  else if (next) { toast('✓ Gesehen – lade nächste Folge …'); playNextOrClose(v, true); }
+  else { toast('✓ Als gesehen markiert'); closePlayer(); }
+};
 const nextOf = n => n ? { id: n.id, season: n.season, num: n.num, title: n.title, url: n.url, dur: n.dur || 0 } : null;
 /** Ältere Einträge: nächste Folge beim Anbieter nachschlagen (im Hintergrund). */
 let nextBusy = false;

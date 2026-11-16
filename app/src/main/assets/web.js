@@ -84,10 +84,15 @@ const WEBX = window.StreamTVApp ? null : (() => {
       ? `<a class="btn" href="${vlcLink(url)}">In VLC öffnen</a>
          <a class="btn" href="infuse://x-callback-url/play?url=${u}">In Infuse öffnen</a>`
       : `<button class="btn" type="button" data-copy>Link für VLC kopieren</button>`;
-    p.insertAdjacentHTML('beforeend', `<div id="extBar">${btns}<button class="btn" type="button" data-retry>Erneut versuchen</button></div>`);
+    // Serie/Film: selbst als gesehen markieren (VLC meldet nichts zurück)
+    let v = null; try { v = vod; } catch (x) {}
+    const done = v ? `<div class="ext-done"><button class="btn" type="button" data-done>✓ Gesehen</button>${v.ep && !v.ep.movie ? '<button class="btn" type="button" data-next>✓ Gesehen · Nächste Folge ▶</button>' : ''}</div>` : '';
+    p.insertAdjacentHTML('beforeend', `<div id="extBar">${btns}<button class="btn" type="button" data-retry>Erneut versuchen</button>${done}</div>`);
     const bar = document.getElementById('extBar');
     bar.addEventListener('click', e => {
       e.stopPropagation();
+      if (e.target.closest('[data-done]')) { window.extDone && extDone(false); return; }
+      if (e.target.closest('[data-next]')) { window.extDone && extDone(true); return; }
       if (e.target.closest('[data-retry]')) { clearBar(); try { retryNow(); } catch (x) {} }
       if (e.target.closest('[data-copy]')) {
         try { navigator.clipboard.writeText(url).then(() => toast('Link kopiert – in VLC: Medien → Netzwerkstream öffnen')); } catch (x) {}
