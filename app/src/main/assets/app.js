@@ -1993,6 +1993,7 @@ function loadStream(url, keep) {
   clearTimeout(RC.timer);
   RC.waiting = false; RC.dead = false;
   if (window.WEBX) url = WEBX.streamUrl(url);
+  if (window.WEBX && !keep && WEBX.handoff(url)) { stopStream(); RC.url = url; RC.dead = true; return; }   // iPad: MKV direkt in VLC
   if (!keep) Object.assign(RC, { url, played: false, tries: 0, rounds: 0, eng: null, resumeAt: 0 });
   RC.loadPlayed = false; RC.lastT = -1; RC.lastMove = Date.now();
   stopStream();
