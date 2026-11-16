@@ -209,6 +209,8 @@ const WL = {
   }
 };
 
+if (typeof PROF !== 'undefined') PROF.patchWL(WL);   // Zusatzprofil: eigene Merkliste
+
 /* ---------------- TMDB ---------------- */
 const TM = {
   STORE: 'streamtv.tmdb',

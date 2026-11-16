@@ -223,7 +223,7 @@ const ACC = {
     // Watchlist-Zugang beim Anmelden im Konto hinterlegen (für die anderen Geräte)
     const wlIn = WL.login.bind(WL), wlOut = WL.logout.bind(WL);
     WL.login = async (mail, pass) => { await wlIn(mail, pass); this.s.wl = { email: String(mail).trim(), pass }; this.save(); };
-    WL.logout = () => { wlOut(); this.s.wl = null; this.save(); };
+    WL.logout = () => { if (typeof PROF !== 'undefined' && PROF.side()) return; wlOut(); this.s.wl = null; this.save(); };
     const ready = () => {
       if (!this.connected) return this.gate();
       this.settingsGroup();

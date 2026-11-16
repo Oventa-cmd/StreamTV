@@ -8,7 +8,9 @@
    wieder eingesetzt.
    ===================================================================== */
 const SYNC = {
-  KEYS: ['streamtv.vodpos', 'streamtv.favs', 'streamtv.recent', 'streamtv.settings', 'streamtv.skip', 'streamtv.tracks', 'streamtv.remind', 'streamtv.stats'],
+  KEYS: ['streamtv.vodpos', 'streamtv.favs', 'streamtv.recent', 'streamtv.settings', 'streamtv.skip', 'streamtv.tracks', 'streamtv.remind', 'streamtv.stats', 'streamtv.profiles', 'streamtv.mylist'],
+  /** Name in der Cloud: Profil-Daten mit Profil-Endung (profile.js), Rest gemeinsam. */
+  ck(k) { return typeof PROF !== 'undefined' ? PROF.cloudKey(k) : k; },
   META: 'streamtv.syncmeta',          // { mtime: {key: ms}, seen: {key: ms}, pulledAt }
   LOCAL_SETTINGS: ['lite', 'vpnAuto', 'vpnReq', 'nativeVod'],   // bleiben pro Gerät (VPN-App, Player)
   applying: false,
@@ -26,7 +28,7 @@ const SYNC = {
 
   /** Änderungen an synchronisierten Schlüsseln mitschreiben (nur echte Änderungen). */
   install() {
-    const T = localStorage.__vault ? localStorage : Storage.prototype;   // PIN-Tresor ersetzt localStorage (vault.js)
+    const T = localStorage.__vault || localStorage.__shim ? localStorage : Storage.prototype;   // PIN-Tresor (vault.js) bzw. Profile (profile.js) ersetzen localStorage
     if (Object.prototype.hasOwnProperty.call(T, '_stvSet')) return;
     const orig = T.setItem;
     T._stvSet = orig;
@@ -106,7 +108,7 @@ const SYNC = {
         const first = !M.pulledAt;   // erster Abgleich auf diesem Gerät: Cloud-Stand hat Vorrang
         M.pulledAt = Date.now();
         for (const k of this.KEYS) {
-          const row = remote[k];
+          const row = remote[this.ck(k)];
           if (!row) { if (localStorage.getItem(k) != null) push.add(k); continue; }
           if (k === VP.STORE || k === SK.STORE || k === 'streamtv.stats') {
             const r2 = this.merge(k, row);
@@ -132,12 +134,12 @@ const SYNC = {
         const mt = M.mtime[k] || 0;
         if (!push.has(k) && mt <= (M.seen[k] || 0)) continue;
         const ts = Math.max(mt, Date.now());
-        up.push({ key: k, value: this.withKept(k, this.sanitize(this.outbound(k, local))), updated_at: ts, device: this.device() });
+        up.push({ key: this.ck(k), value: this.withKept(k, this.sanitize(this.outbound(k, local))), updated_at: ts, device: this.device() });
         M.seen[k] = ts; M.mtime[k] = ts;
       }
       if (up.length) {
         const r = await this.api('UPSERT', '?on_conflict=user_id,key', up);
-        if (r.status < 200 || r.status > 299) { up.forEach(u => { M.seen[u.key] = 0; }); return false; }
+        if (r.status < 200 || r.status > 299) { for (const k of this.KEYS) if (up.some(u => u.key === this.ck(k))) M.seen[k] = 0; return false; }
       }
       this.saveMeta();
       if (changed.size) this.refreshUi(changed);
@@ -238,6 +240,8 @@ const SYNC = {
       if (changed.has('streamtv.tracks')) TRK.p = null;
       if (changed.has('streamtv.remind')) SP.rem = null;
       if (changed.has(VP.STORE)) VP.share();
+      if (changed.has('streamtv.profiles') && typeof PROF !== 'undefined') PROF.changed();
+      if (changed.has('streamtv.mylist') && typeof PROF !== 'undefined' && PROF.side()) { WL.refreshItems(); TM.clear(); loadDiscover(true); }
       if (!playerOpen && !sheetOpen) refresh();
     } catch (e) {}
   }

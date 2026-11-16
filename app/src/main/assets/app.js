@@ -539,7 +539,12 @@ function renderSettings() {
 function renderWlGroup() {
   const own = (state.settings.tmdbKey || '').trim();
   let html = '';
-  if (WL.connected) {
+  if (typeof PROF !== 'undefined' && PROF.side()) {
+    const n = (WL.s.items || []).length;
+    html += `<div class="row-item"><div class="meta"><b>Eigene Merkliste (Profil ${esc((PROF.current() || {}).name || '')})</b>
+      <small>${n} Titel · nur in StreamTV, unabhängig von der Serien-Watchlist · Empfehlungen über TMDB ${WL.s.tmdb || own ? '✓' : '(Schlüssel fehlt – im Hauptprofil Watchlist anmelden)'}</small></div>
+      <div class="actions"><button class="mini focusable" id="wlReload">Empfehlungen neu laden</button></div></div>`;
+  } else if (WL.connected) {
     const n = (WL.s.items || []).length;
     html += `<div class="row-item"><div class="meta"><b>Serien-Watchlist: ${esc(WL.s.email || 'angemeldet')}</b>
       <small>${n} Titel auf der Watchlist · TMDB-Schlüssel ${WL.s.tmdb ? '✓' : 'fehlt im Konto'} · Sync ${SYNC.meta().pulledAt ? 'zuletzt ' + new Date(SYNC.meta().pulledAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : 'ausstehend'}</small></div>
