@@ -155,6 +155,7 @@ class MainActivity : Activity() {
         @JavascriptInterface fun nvStop() = native.stop()
         @JavascriptInterface fun nvTracks(): String = native.tracksJson
         @JavascriptInterface fun nvSelect(type: String, g: Int, i: Int) = native.select(type, g, i)
+        @JavascriptInterface fun nvPrefs(audio: String, sub: String) = native.prefs(audio, sub)
 
         /** Weiterschauen-Liste (JSON-Array) fuer den TV-Launcher speichern. */
         @JavascriptInterface

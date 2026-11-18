@@ -21,6 +21,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -52,6 +53,10 @@ class NativePlayer(private val act: Activity, private val root: FrameLayout, pri
     private var liveBase = 0L
     private var playingSince = -1L
     private var liveRetries = 0
+    // Gemerkte Sprachen (aus der App): gleich beim Start setzen statt spaeter umzuschalten
+    @Volatile private var prefAudio = ""
+    @Volatile private var prefSub = ""
+    private var textOff = false
 
     private val tick = object : Runnable {
         override fun run() { emit("timeupdate"); ui.postDelayed(this, 500) }
@@ -62,6 +67,8 @@ class NativePlayer(private val act: Activity, private val root: FrameLayout, pri
     }
 
     fun play(url: String, startMs: Long, ua: String) { ui.post { start(url, startMs, ua, false, 0) } }
+    /** Bevorzugte Ton-/Untertitelsprache fuer den naechsten Start ("" = egal, sub "off" = keine). */
+    fun prefs(audio: String, sub: String) { prefAudio = audio; prefSub = sub }
     /** Live-TV mit grossem Puffer. buf: 1 normal · 2 gross · 3 sehr gross */
     fun playLive(url: String, ua: String, buf: Int) { ui.post { start(url, 0, ua, true, buf) } }
     fun pause() { ui.post { player?.playWhenReady = false; emit("pause") } }
@@ -86,7 +93,7 @@ class NativePlayer(private val act: Activity, private val root: FrameLayout, pri
 
     private fun start(url: String, startMs: Long, ua: String, isLive: Boolean, buf: Int) {
         release()
-        live = isLive; liveBase = 0L; playingSince = -1L; liveRetries = 0
+        live = isLive; liveBase = 0L; playingSince = -1L; liveRetries = 0; textOff = false
         val sv = SurfaceView(act)
         root.addView(sv, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER))
         surface = sv
@@ -118,6 +125,12 @@ class NativePlayer(private val act: Activity, private val root: FrameLayout, pri
         val p = b.build()
         p.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
         p.setVideoSurfaceView(sv)
+        if (!isLive) {   // Spuren gleich richtig waehlen – ein Wechsel waehrend des Ladens fragt den Stream neu an
+            val tb = p.trackSelectionParameters.buildUpon()
+            if (prefAudio.isNotEmpty()) tb.setPreferredAudioLanguage(prefAudio)
+            if (prefSub.isNotEmpty() && prefSub != "off") tb.setPreferredTextLanguage(prefSub)
+            p.trackSelectionParameters = tb.build()
+        }
         // Springen zum naechsten Schluesselbild: viel schneller ueber das Netz (wie bei Netflix)
         p.setSeekParameters(SeekParameters.CLOSEST_SYNC)
         p.addListener(listener)
@@ -208,6 +221,16 @@ class NativePlayer(private val act: Activity, private val root: FrameLayout, pri
         }
         override fun onPlayerError(error: PlaybackException) {
             val p = player
+            // Untertitel lassen sich nicht darstellen (z. B. Bild-Untertitel) → ohne Untertitel weiter statt Abbruch
+            val ex = error as? ExoPlaybackException
+            if (p != null && !textOff && ex != null && ex.type == ExoPlaybackException.TYPE_RENDERER &&
+                ex.rendererIndex >= 0 && ex.rendererIndex < p.rendererCount && p.getRendererType(ex.rendererIndex) == C.TRACK_TYPE_TEXT) {
+                textOff = true
+                p.trackSelectionParameters = p.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                p.prepare()
+                emit("subfail")
+                return
+            }
             // Live: hinter das Zeitfenster gefallen bzw. kurzer Netzaussetzer → still an der Live-Kante weitermachen
             if (live && p != null && liveRetries < 3 && (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW ||
                         error.errorCode == PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||

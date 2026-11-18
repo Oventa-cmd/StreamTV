@@ -1927,6 +1927,7 @@ NV.ev = (type, pos, dur, paused, msg) => {
   NV.d = dur > 0 ? dur / 1000 : NaN; NV.paused = !!paused;
   if (NV.seeking && (type === 'playing' || (type === 'pause' && paused) || Date.now() - NV.seekAt > 30000)) { NV.seeking = false; video.dispatchEvent(new Event('seeked')); }
   if (type === 'error') { console.warn('Nativer Player:', msg); if (failCb) failCb(); return; }
+  if (type === 'subfail') { NV.cue(''); toast('Diese Untertitel kann das Gerät nicht anzeigen – weiter ohne'); return; }
   if (type === 'tracks') {
     try { NV.tracks = JSON.parse(bridge.nvTracks() || '[]'); } catch (e) { NV.tracks = []; }
     const au = NV.tracks.filter(t => t.type === 'audio');
@@ -1995,7 +1996,10 @@ function startEngine(name, url, fail) {
     Object.assign(NV, { on: true, t: 0, d: NaN, paused: false, seeking: false, tracks: [], subHide: trkPref().sub === 'off', lastCue: '' });
     document.documentElement.classList.add('nv');
     try {
-      if (vod) bridge.nvPlay(url, 0, 'IPTVSmartersPlayer');
+      if (vod) {
+        try { if (typeof bridge.nvPrefs === 'function') { const tp = trkPref(); bridge.nvPrefs(tp.audio || '', tp.sub || ''); } } catch (e) {}
+        bridge.nvPlay(url, 0, 'IPTVSmartersPlayer');
+      }
       else bridge.nvPlayLive(url, 'IPTVSmartersPlayer', liveBuf());
     } catch (e) { nvStop(); return fail(); }
   } else if (name === 'hls') {
@@ -3013,6 +3017,8 @@ function getTracks() {
 }
 /** Gemerkte Sprache automatisch wählen. */
 function applyTrackPref() {
+  // Nativer Player wählt die gemerkten Sprachen schon beim Start (Umschalten während des Ladens bricht manche Folgen ab)
+  if (engine === 'exo' && vod) return;
   const p = trkPref(), t = getTracks();
   if (p.audio && t.audio.length > 1) { const a = t.audio.find(x => x.lang === p.audio); if (a && !a.sel) a.set(); }
   if (p.sub && t.subs.length) {
