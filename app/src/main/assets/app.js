@@ -1983,7 +1983,8 @@ function startEngine(name, url, fail) {
     return;
   }
   engine = name; failCb = fail;
-  startTimer = setTimeout(() => fail(), 20000);
+  // Nativer Player meldet Fehler selbst und versucht Netzfehler erneut → mehr Zeit lassen (große MKV, Fortsetzen mitten in der Folge)
+  startTimer = setTimeout(() => fail(), name === 'exo' && vod ? 60000 : 20000);
   if (name === 'exo') {
     Object.assign(NV, { on: true, t: 0, d: NaN, paused: false, seeking: false, tracks: [], subHide: trkPref().sub === 'off', lastCue: '' });
     document.documentElement.classList.add('nv');
@@ -2043,9 +2044,10 @@ function loadStream(url, keep) {
   stopStream();
   const token = ++playToken;
   let list = enginesFor(url);
-  if (vod && nvOk()) list = ['exo', ...list];   // Serien & Filme: zuerst nativ (Dolby-Ton)
+  // Serien & Filme: nur nativ. Der WebView-Ausweich-Player spielt MKV meist ohne Ton (kein Dolby) und ohne Spurwahl –
+  // lieber neu versuchen bzw. eine klare Meldung als ein stummes Bild.
+  if (vod && nvOk()) list = ['exo'];
   else if (!vod && nvLiveOk()) list = ['exo', ...list];   // Live-TV: zuerst nativ (großer Puffer)
-  if (keep && RC.eng === 'exo' && vod) list = ['exo'];   // lief nativ → dabei bleiben (Ausweich-Player hat oft keinen Ton und keine Spuren)
   else if (keep && RC.eng) list = [RC.eng, ...list.filter(x => x !== RC.eng)];   // zuerst die Engine, die schon lief
   const next = () => {
     if (token !== playToken) return;
@@ -3089,7 +3091,7 @@ function renderMenu(focusIdx) {
   rows.push(item('Aus', !SLEEP.end && !SLEEP.ep, () => sleepSet(0, false)));
   if (vod) rows.push(item(vod.ep.movie ? 'Nach diesem Film' : 'Nach dieser Folge', SLEEP.ep, () => sleepSet(0, true)));
   SLEEP_OPTS.forEach(m => rows.push(item(`${m} Minuten`, false, () => sleepSet(m, false))));
-  rows.push('<div class="pm-h">Mehr</div>');
+  rows.push(`<div class="pm-h">Mehr · ${engine === 'exo' ? 'Systemplayer' : engine === 'native' ? 'Browser-Player' : engine === 'hls' ? 'HLS-Player' : engine === 'ts' ? 'TS-Player' : 'Player'}</div>`);
   if (!vod && currentId) rows.push(item(isFav(currentId) ? '★ Aus Favoriten entfernen' : '☆ Zu Favoriten hinzufügen', false, () => toggleFav(currentId)));
   if (vod && canExternal()) rows.push(item('In anderem Player öffnen (z. B. VLC)', false, () => openExternalPlayer()));
   rows.push(item('Schließen', false, () => {}, 'muted'));
