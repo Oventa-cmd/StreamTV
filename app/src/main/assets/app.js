@@ -1090,7 +1090,8 @@ function renderIptv(focusResume) {
     body = `<div class="ep-cols single"><div class="ep-list">${'<div class="ep skel"><span class="ep-thumb"></span><span class="ep-txt"></span></div>'.repeat(3)}</div></div>`;
   }
   const logo = d && TM.pickLogo(d);
-  $('#sheetInner').innerHTML = `
+  const box = $('#sheetInner'), keepTop = box.scrollTop;
+  box.innerHTML = `
     <div class="ip-head">
       <div class="eyebrow">${film ? 'Film' : 'Serie'} · bei deinem Anbieter${wlTag}</div>
       ${logo ? `<img class="ep-logo" src="${TM.IMG}w500${logo}" alt="">` : `<h1>${esc(p.title)}</h1>`}
@@ -1106,11 +1107,17 @@ function renderIptv(focusResume) {
   const same = ip.shown === ip.status;
   ip.shown = ip.status;
   let target = same && focusedKey && $(`#sheet [data-ipk="${CSS.escape(focusedKey)}"]`);
-  if (!target && ip.status === 'show' && (focusResume || !same)) target = $('#sheet [data-ipk="play"]');
+  if (target) {   // gleiche Ansicht nur aktualisiert (Beschreibung, Folgenbilder …) → Stelle und Fokus halten
+    box.scrollTop = keepTop;
+    target.focus({ preventScroll: true });
+    return;
+  }
+  if (same && focusedKey) { box.scrollTop = keepTop; const r = recoverFocus(navNodes()); if (r) { r.el.focus({ preventScroll: true }); return; } }
+  if (ip.status === 'show' && (focusResume || !same)) target = $('#sheet [data-ipk="play"]');
   if (!target) target = $('#sheet .ip-list .focusable') || $('#sheet .ip-head .focusable');
   if (target) {
     target.focus({ preventScroll: true });
-    if (target.closest('.ip-head')) $('#sheetInner').scrollTop = 0; else target.scrollIntoView({ block: 'nearest' });
+    if (target.closest('.ip-head')) box.scrollTop = 0; else target.scrollIntoView({ block: 'nearest' });
   }
 }
 /** Titel aus der Anbieter-Ansicht auf die Watchlist setzen. */
@@ -3267,12 +3274,49 @@ document.addEventListener('keydown', e => { if (SLEEP.on) { e.preventDefault(); 
 ['click', 'touchstart'].forEach(ev => document.addEventListener(ev, e => { if (SLEEP.on) { e.preventDefault(); e.stopPropagation(); sleepWake(); } }, true));
 
 /* ================= Navigation per Fernbedienung ================= */
-function navigate(dir) {
+/* Zuletzt fokussiertes Element merken: Wird es beim Neuzeichnen ersetzt oder gesperrt (z. B. „Jetzt prüfen“),
+   geht der Fokus an dasselbe bzw. das nächstgelegene Element – statt zurück oben in die Menüleiste. */
+const FM = { sig: null, x: 0, y: 0, head: false };
+function focusSig(el) {
+  if (!el || !el.dataset) return null;
+  if (el.id) return '#' + CSS.escape(el.id);
+  if (el.dataset.ipk) return `[data-ipk="${CSS.escape(el.dataset.ipk)}"]`;
+  return focusSel(el);
+}
+document.addEventListener('focusin', e => {
+  const t = e.target;
+  if (!t || !t.classList || !t.classList.contains('focusable')) return;
+  const r = t.getBoundingClientRect();
+  Object.assign(FM, { sig: focusSig(t), x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2, head: !!t.closest('header') });
+});
+function navNodes() {
   const nodes = sheetOpen ? $('#sheet').querySelectorAll('.focusable') : document.querySelectorAll('header .focusable, .view.active .focusable');
-  const all = [...nodes].filter(el => el.getClientRects().length && !el.disabled);
+  return [...nodes].filter(el => el.getClientRects().length && !el.disabled);
+}
+function recoverFocus(all) {
+  if (!FM.sig) return null;
+  const eq = all.find(el => el.matches(FM.sig));
+  if (eq) return { el: eq, same: true };
+  let best = null, bd = Infinity;
+  for (const el of all) {
+    if (!FM.head && el.closest('header')) continue;
+    const r = el.getBoundingClientRect(), d = Math.hypot((r.left + r.right) / 2 - FM.x, (r.top + r.bottom) / 2 - FM.y);
+    if (d < bd) { bd = d; best = el; }
+  }
+  return best ? { el: best, same: false } : null;
+}
+let navFast = false, navLast = 0;
+function navigate(dir) {
+  const all = navNodes();
   if (!all.length) return;
-  const cur = document.activeElement;
-  if (!all.includes(cur)) { all[0].focus({ preventScroll: true }); return; }
+  let cur = document.activeElement;
+  if (!all.includes(cur)) {
+    const r = recoverFocus(all);
+    if (!r) { all[0].focus({ preventScroll: true }); return; }
+    r.el.focus({ preventScroll: true });
+    if (!r.same) { r.el.scrollIntoView({ block: 'nearest' }); return; }
+    cur = r.el;   // gleiches Element, nur neu gezeichnet → normal weiter navigieren
+  }
   // Sticky-Kopfzeile: für Hoch/Runter an ihrer echten Position am Seitenanfang werten
   const vert = dir === 'ArrowUp' || dir === 'ArrowDown';
   const rectOf = el => {
@@ -3352,7 +3396,7 @@ function navigate(dir) {
    Eigene Berechnung statt scrollIntoView + scrollBy: Zwei gleichzeitige weiche Scrollvorgänge haben sich
    gegenseitig abgebrochen (Seite blieb auf halber Strecke stehen, oben nicht ganz sichtbar). Hier wird immer
    vom Ziel des laufenden Scrollvorgangs aus gerechnet und nur ein einziger Scrollbefehl abgesetzt. */
-const scrollMode = () => state.settings.lite ? 'auto' : 'smooth';
+const scrollMode = () => state.settings.lite || navFast ? 'auto' : 'smooth';
 function pageScrollTo(y) {
   const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
   y = Math.round(Math.max(0, Math.min(max, y)));
@@ -3462,7 +3506,11 @@ document.addEventListener('keydown', e => {
     else if (['Enter', ' ', 'Escape', 'Backspace', 'ArrowUp', 'ArrowDown'].includes(e.key)) endMove();
     return;
   }
-  if (NAV_KEYS.includes(e.key)) { e.preventDefault(); navigate(e.key); return; }
+  if (NAV_KEYS.includes(e.key)) {
+    e.preventDefault();
+    const now = Date.now(); navFast = e.repeat || now - navLast < 200; navLast = now;   // schnell/gedrückt → ohne Animation springen
+    navigate(e.key); navFast = false; return;
+  }
   if (e.key === 'Enter' && a && a.dataset && (a.dataset.resume || (a.dataset.show && a.closest('.wl-row')))) {
     e.preventDefault();
     if (e.repeat || HOLD.id) return;
@@ -3907,7 +3955,7 @@ function renderUpdate() {
       <b>${avail ? `Update verfügbar: Version ${esc(latest)}` : cur && latest ? 'StreamTV ist aktuell' : 'Installierte Version'}</b>
       <small>Installiert: ${esc(cur || '– (nur in der TV-App)')}${latest ? ' · Neueste: ' + esc(latest) : ''} · geprüft: ${esc(when)}</small>
       ${u.err ? `<small class="err">${esc(u.err)}</small>` : ''}
-    </div><div class="actions"><button class="mini focusable" id="updCheck" ${UPD.busy ? 'disabled' : ''}>${UPD.busy ? 'Prüfe …' : 'Jetzt prüfen'}</button></div></div>`;
+    </div><div class="actions"><button class="mini focusable" id="updCheck" ${UPD.busy ? 'aria-disabled="true"' : ''}>${UPD.busy ? 'Prüfe …' : 'Jetzt prüfen'}</button></div></div>`;
   const inApp = !!(bridge && typeof bridge.installUpdate === 'function');
   if (avail && inApp) {
     const I = UPD.inst || {};
@@ -3917,7 +3965,7 @@ function renderUpdate() {
     html += `<div class="row-item"><div class="meta"><b>Direkt hier aktualisieren</b>
         <small>${I.st === 'error' ? `<span class="err">${esc(I.msg)}</span>` : I.st === 'perm' ? 'Einmalig erlauben: In den Einstellungen „StreamTV“ das Installieren unbekannter Apps zulassen, dann zurück und erneut drücken.' : 'Lädt die neue Version von GitHub und installiert sie. StreamTV schließt sich dabei kurz – danach einfach wieder öffnen. Einstellungen und Daten bleiben erhalten.'}</small>
         ${busy && I.pct >= 0 ? `<span class="ip-pbar upd-bar"><i style="width:${I.pct}%"></i></span>` : ''}
-      </div><div class="actions"><button class="mini primary focusable" id="updInstall" ${busy ? 'disabled' : ''}>${label}</button></div></div>`;
+      </div><div class="actions"><button class="mini primary focusable" id="updInstall" ${busy ? 'aria-disabled="true"' : ''}>${label}</button></div></div>`;
   }
   if (avail) html += `<div class="row-item upd-cmd"><div class="meta"><b>${inApp ? 'Alternativ am PC (ADB)' : 'Am PC aktualisieren (ADB)'}</b>
       <code>curl.exe -L -o StreamTV.apk ${esc(UPD.APK)}\nadb connect &lt;IP-des-Fernsehers&gt;:&lt;Port&gt;\nadb install -r StreamTV.apk</code></div></div>`;
@@ -3946,7 +3994,7 @@ function renderLauncherUpdate() {
       <b>${avail ? `TV-Launcher: Update ${esc(latest)} verfügbar` : 'TV-Launcher ist aktuell'}</b>
       <small>${sub}</small>
       ${busy && I.pct >= 0 ? `<span class="ip-pbar upd-bar"><i style="width:${I.pct}%"></i></span>` : ''}
-    </div>${avail ? `<div class="actions"><button class="mini primary focusable" id="lupdInstall" ${busy ? 'disabled' : ''}>${label}</button></div>` : ''}</div>`;
+    </div>${avail ? `<div class="actions"><button class="mini primary focusable" id="lupdInstall" ${busy ? 'aria-disabled="true"' : ''}>${label}</button></div>` : ''}</div>`;
 }
 /** Launcher-APK laden und installieren (Android-Seite: Updater.kt). */
 function installLauncher() {
