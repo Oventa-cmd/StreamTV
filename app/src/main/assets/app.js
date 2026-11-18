@@ -1846,8 +1846,9 @@ function closeManage() {
 
 /* ================= Ansichten ================= */
 const TAB_OF = { manage: 'settings', cats: 'settings', stats: 'settings' };   // Unterseiten der Einstellungen
-/* Reiterleiste: Beim schnellen Durchblättern mit ◀▶ wandert nur die Markierung mit;
-   die (teure) Ansicht wird erst gebaut, wenn man kurz auf einem Reiter stehen bleibt. */
+/* Reiterleiste: Beim Durchblättern mit ◀▶ wandert nur die Markierung mit; die Ansicht (Kataloge, Kacheln …)
+   wird erst gebaut, wenn man kurz auf einem Reiter stehen bleibt – oder sofort mit ▼ bzw. OK. */
+const TAB_DWELL = 650;
 const TABP = { t: null, view: null };
 function tabPreview(btn) {
   btn.focus({ preventScroll: true });
@@ -1855,24 +1856,29 @@ function tabPreview(btn) {
   moveTabInd();
   clearTimeout(TABP.t);
   TABP.view = btn.dataset.view;
-  TABP.t = setTimeout(tabCommit, 240);
+  TABP.t = setTimeout(tabCommit, TAB_DWELL);
 }
-function tabCommit() {
+function tabCommit(now) {
   clearTimeout(TABP.t);
   const v = TABP.view;
   TABP.t = null; TABP.view = null;
-  if (v && v !== state.view) show(v);
+  if (v && v !== state.view) show(v, !now);
 }
-function show(view) {
+/** fromTab: aus der Reiterleiste → erst umschalten und zeichnen lassen, dann den Inhalt bauen (Tasten bleiben flüssig). */
+function show(view, fromTab) {
   if (TABP.t) { clearTimeout(TABP.t); TABP.t = null; TABP.view = null; }
   if (view === 'discover') view = 'series';                  // alte Links (Launcher)
   if (view === 'favorites') { view = 'live'; if (favList().length) { state.cat = FAV_CAT; renderLive(); } }
   state.view = view;
-  if (lazyDirty.has(view)) { lazyDirty.delete(view); LAZY[view](); }
-  if (view === 'series') loadCatalog('series', false);
-  if (view === 'movies') loadCatalog('vod', false);
-  if (view === 'search') bgCatalogs();
-  if (view === 'sport') { renderSport(); SP.refresh(false); }
+  const build = () => {
+    if (state.view !== view) return;   // inzwischen weitergeblättert
+    if (lazyDirty.has(view)) { lazyDirty.delete(view); keepFocus(() => LAZY[view]()); }
+    if (view === 'series') loadCatalog('series', false);
+    if (view === 'movies') loadCatalog('vod', false);
+    if (view === 'search') bgCatalogs();
+    if (view === 'sport') { renderSport(); SP.refresh(false); }
+  };
+  if (fromTab) requestAnimationFrame(() => setTimeout(build, 0)); else build();
   const tabView = TAB_OF[view] || view;
   $$('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
   $$('.tabbar [data-view]').forEach(b => b.classList.toggle('active', b.dataset.view === tabView));
@@ -3515,7 +3521,7 @@ document.addEventListener('click', e => { if (e.target && e.target.dataset && e.
 
 document.addEventListener('keydown', e => {
   if (playerOpen) { playerKey(e); return; }
-  if (TABP.t && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') tabCommit();   // erst wechseln, dann weiter (z. B. ▼ in die Ansicht)
+  if (TABP.t && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') tabCommit(true);   // erst wechseln, dann weiter (z. B. ▼ in die Ansicht)
   const a = document.activeElement;
   const typing = a && ((a.tagName === 'INPUT' && !a.readOnly) || a.tagName === 'TEXTAREA');
   if (sheetOpen && ['Escape', 'Backspace'].includes(e.key) && !typing) { e.preventDefault(); ip ? closeIptv() : closeSheet(); return; }
