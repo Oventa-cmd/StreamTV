@@ -2,8 +2,40 @@
    StreamTV – Serienkatalog des IPTV-Anbieters (Xtream Codes)
    Sucht eine TMDB-Serie im Serienangebot der eigenen Xtream-Quellen.
    ===================================================================== */
+/* ---------- Dauerhafter Zwischenspeicher (IndexedDB) ----------
+   Kataloge (oft 10–50 MB JSON) und Serien-Infos überleben so den App-Neustart:
+   sofort aus dem Speicher anzeigen, im Hintergrund auffrischen. */
+const IDB = {
+  db_: null,
+  open() {
+    if (!this.db_) this.db_ = new Promise((res, rej) => {
+      try {
+        const r = indexedDB.open('streamtv-cache', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('kv');
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+      } catch (e) { rej(e); }
+    });
+    return this.db_;
+  },
+  async get(k) {
+    try {
+      const db = await Promise.race([this.open(), new Promise((_, rej) => setTimeout(() => rej(new Error('idb')), 3000))]);
+      return await new Promise(res => {
+        const to = setTimeout(() => res(undefined), 3000);   // Speicher hängt → einfach normal laden
+        const q = db.transaction('kv').objectStore('kv').get(k);
+        q.onsuccess = () => { clearTimeout(to); res(q.result); }; q.onerror = () => { clearTimeout(to); res(undefined); };
+      });
+    } catch (e) { return undefined; }
+  },
+  async set(k, v) { try { (await this.open()).transaction('kv', 'readwrite').objectStore('kv').put(v, k); } catch (e) {} },
+  async clear() { try { (await this.open()).transaction('kv', 'readwrite').objectStore('kv').clear(); } catch (e) {} }
+};
+
 const XS = {
   TTL: 6 * 3600 * 1000,
+  INFO_TTL: 3600 * 1000,
+  bg_: {},
   cat_: {},        // accKey -> { at, list, cats }
   info_: {},       // accKey:sid -> Serien-Infos
   STOP: new Set(['der', 'die', 'das', 'the', 'a', 'an', 'and', 'und', 'of', 'von', 'le', 'la', 'el']),
@@ -44,8 +76,27 @@ const XS = {
 
   /** Katalog eines Zugangs – kind: 'series' (Serien) oder 'vod' (Filme). Nur im Speicher (kann sehr groß sein). */
   async catalog(acc, force, kind = 'series') {
-    const ck = kind + '|' + acc.key, c = this.cat_[ck];
-    if (!force && c && Date.now() - c.at < this.TTL) return c;
+    const ck = kind + '|' + acc.key;
+    let c = this.cat_[ck];
+    if (!force && !c) {   // App-Start: gespeicherten Katalog nehmen statt alles neu zu laden
+      const saved = await IDB.get('cat:' + ck);
+      if (saved && Array.isArray(saved.list) && !this.cat_[ck]) {
+        for (const it of saved.list) it.t = this.tokens(it.n);
+        c = this.cat_[ck] = { at: saved.at, list: saved.list, cats: saved.cats || [] };
+      } else c = this.cat_[ck];
+    }
+    if (!force && c) {
+      if (Date.now() - c.at >= this.TTL) this.fetchCatalog(acc, kind).catch(() => {});   // veraltet → still im Hintergrund
+      return c;
+    }
+    return this.fetchCatalog(acc, kind);
+  },
+  fetchCatalog(acc, kind) {
+    const ck = kind + '|' + acc.key;
+    return this.bg_[ck] || (this.bg_[ck] = this.fetchCatalog_(acc, kind).finally(() => { delete this.bg_[ck]; }));
+  },
+  async fetchCatalog_(acc, kind) {
+    const ck = kind + '|' + acc.key;
     const vod = kind === 'vod';
     const [list, cats] = await Promise.all([
       getJSON(this.api(acc, vod ? 'get_vod_streams' : 'get_series')),
@@ -62,7 +113,9 @@ const XS = {
       };
     });
     const order = (Array.isArray(cats) ? cats : []).map(x => x.category_name).filter(Boolean);
-    return (this.cat_[ck] = { at: Date.now(), list: items, cats: order });
+    const at = Date.now();
+    IDB.set('cat:' + ck, { at, cats: order, list: items.map(({ t, ...r }) => r) });
+    return (this.cat_[ck] = { at, list: items, cats: order });
   },
 
   /* ---------- Verfügbarkeit: hat der Anbieter diesen TMDB-Titel? ---------- */
@@ -144,7 +197,18 @@ const XS = {
   /** Staffeln & Folgen einer Katalog-Serie. */
   async info(acc, sid) {
     const k = acc.key + ':' + sid;
-    if (this.info_[k]) return this.info_[k];
+    const m = this.info_[k];
+    if (m && Date.now() - (m.at || 0) < this.INFO_TTL) return m;
+    const saved = m || await IDB.get('info:' + k);
+    if (saved && saved.seasons) {   // sofort anzeigen, neue Folgen im Hintergrund holen
+      this.info_[k] = saved;
+      if (Date.now() - (saved.at || 0) >= this.INFO_TTL && !this.bg_[k]) this.bg_[k] = this.fetchInfo(acc, sid).catch(() => {}).finally(() => { delete this.bg_[k]; });
+      return saved;
+    }
+    return this.fetchInfo(acc, sid);
+  },
+  async fetchInfo(acc, sid) {
+    const k = acc.key + ':' + sid;
     const j = await getJSON(this.api(acc, 'get_series_info', '&series_id=' + encodeURIComponent(sid)));
     let eps = j && j.episodes;
     if (Array.isArray(eps)) {   // manche Panels liefern eine flache Liste
@@ -165,7 +229,9 @@ const XS = {
         })).sort((a, b) => a.num - b.num)
       })).filter(s => s.eps.length);
     if (!seasons.length) throw new Error('Keine Folgen beim Anbieter gefunden');
-    return (this.info_[k] = { seasons });
+    const res = { at: Date.now(), seasons };
+    IDB.set('info:' + k, res);
+    return (this.info_[k] = res);
   },
   /** Ein Film als „Folgenliste“ mit einem Eintrag – gleicher Player, gleiches Fortsetzen. */
   async movie(acc, it) {

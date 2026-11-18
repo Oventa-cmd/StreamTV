@@ -30,13 +30,20 @@ function load() {
     state.recent = JSON.parse(localStorage.getItem(KEY.recent) || '[]');
     state.sources = JSON.parse(localStorage.getItem(KEY.src) || '[]');
     state.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(KEY.set) || '{}') };
+    if (raw !== null) { chSaved.ref = state.channels; chSaved.len = state.channels.length; }   // schon gespeichert
   } catch (e) { state.channels = DEMO.map(c => ({ ...c })); }
   for (const c of state.channels) if (!c.src) c.src = c.url === DEMO_URL ? 'demo' : 'manual';
   for (const s of state.sources) s.loading = false;
 }
+/* Die Senderliste ist oft mehrere MB groß – nur schreiben, wenn sie sich geändert hat (neue Liste oder andere Länge;
+   Änderungen an einzelnen Sendern setzen chSaved.ref = null). */
+const chSaved = { ref: null, len: -1 };
 function persist() {
   try {
-    localStorage.setItem(KEY.ch, JSON.stringify(state.channels));
+    if (state.channels !== chSaved.ref || state.channels.length !== chSaved.len) {
+      localStorage.setItem(KEY.ch, JSON.stringify(state.channels));
+      chSaved.ref = state.channels; chSaved.len = state.channels.length;
+    }
     localStorage.setItem(KEY.fav, JSON.stringify(state.favs));
     localStorage.setItem(KEY.recent, JSON.stringify(state.recent));
     localStorage.setItem(KEY.src, JSON.stringify(state.sources));
@@ -561,7 +568,12 @@ function renderWlGroup() {
   if (active && document.activeElement.tagName === 'INPUT') return; // Eingabe nicht unterbrechen
   $('#wlGroup').innerHTML = html;
 }
-function renderAll() { renderHome(); renderLive(); renderSearch(); renderManage(); renderSettings(); renderRecs(); }
+/* Große Ansichten (Live-TV, Suche, Kanäle verwalten) nur zeichnen, wenn sie sichtbar sind –
+   sonst merken und beim Öffnen nachholen. Spart bei jedem Favoriten, Sync usw. hunderte Kacheln. */
+const LAZY = { live: () => renderLive(), search: () => renderSearch(), manage: () => renderManage() };
+const lazyDirty = new Set();
+function renderLazy() { for (const v in LAZY) { if (state.view === v) { lazyDirty.delete(v); LAZY[v](); } else lazyDirty.add(v); } }
+function renderAll() { renderHome(); renderLazy(); renderSettings(); renderRecs(); }
 function focusSel(a) {
   const d = a && a.dataset;
   if (!d) return null;
@@ -577,7 +589,7 @@ function keepFocus(fn) {
     if (el) el.focus({ preventScroll: true });
   }
 }
-function refresh() { persist(); keepFocus(() => { renderHome(); renderLive(); renderSearch(); renderManage(); renderSettings(); }); }
+function refresh() { persist(); keepFocus(() => { renderHome(); renderLazy(); renderSettings(); }); }
 let toastTimer = null;
 function toast(msg) {
   const t = $('#toast');
@@ -1365,7 +1377,7 @@ function renderCats() {
 function setHidden(kind, list) {
   state.settings[hideKey(kind)] = [...new Set(list)];
   persist();
-  if (kind === 'live') keepFocus(() => { renderLive(); renderSearch(); });
+  if (kind === 'live') keepFocus(() => { renderLive(); if (state.view === 'search') renderSearch(); else lazyDirty.add('search'); });
   else if (CAT[kind].status === 'ready') renderCatalog(kind, true);
   renderSettings();
   renderCats();
@@ -1856,6 +1868,7 @@ function show(view) {
   if (view === 'discover') view = 'series';                  // alte Links (Launcher)
   if (view === 'favorites') { view = 'live'; if (favList().length) { state.cat = FAV_CAT; renderLive(); } }
   state.view = view;
+  if (lazyDirty.has(view)) { lazyDirty.delete(view); LAZY[view](); }
   if (view === 'series') loadCatalog('series', false);
   if (view === 'movies') loadCatalog('vod', false);
   if (view === 'search') bgCatalogs();
@@ -1950,7 +1963,25 @@ function stopStream() {
   video.load();
 }
 function safePlay(p) { try { const r = p.play(); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+/* hls.js (600 KB) und mpegts.js (270 KB) braucht nur der Ausweich-Player – erst laden, wenn nötig
+   (bzw. still einige Sekunden nach dem Start), statt den App-Start damit zu bremsen. */
+const LIBS = { hls: ['hls.min.js', () => window.Hls], ts: ['mpegts.js', () => window.mpegts] }, libP = {};
+function loadLib(name) {
+  const L = LIBS[name];
+  if (!L || L[1]()) return Promise.resolve();
+  return libP[name] || (libP[name] = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = L[0]; sc.onload = sc.onerror = () => res();
+    document.head.appendChild(sc);
+  }));
+}
 function startEngine(name, url, fail) {
+  if (LIBS[name] && !LIBS[name][1]()) {   // Bibliothek nachladen, dann denselben Versuch starten
+    engine = name; failCb = fail;
+    const tok = playToken;
+    loadLib(name).then(() => { if (tok === playToken && engine === name && failCb === fail) startEngine(name, url, fail); });
+    return;
+  }
   engine = name; failCb = fail;
   startTimer = setTimeout(() => fail(), 20000);
   if (name === 'exo') {
@@ -3762,7 +3793,7 @@ $('#chForm').addEventListener('submit', e => {
   const f = new FormData(e.target);
   const data = { name: (f.get('name') || '').trim(), group: (f.get('group') || '').trim() || 'Sonstige', url: (f.get('url') || '').trim(), logo: (f.get('logo') || '').trim() };
   if (!data.name || !data.url) return;
-  if (editId) { const c = byId(editId); if (c) Object.assign(c, data); }
+  if (editId) { const c = byId(editId); if (c) { Object.assign(c, data); chSaved.ref = null; } }
   else state.channels.push({ id: 'manual_' + uid(), src: 'manual', ...data });
   resetForm(); refresh(); toast('Kanal gespeichert');
 });
@@ -3834,7 +3865,7 @@ $('#demoAdd').addEventListener('click', () => {
 $('#resetAll').addEventListener('click', () => {
   if (!confirm('Alle Quellen, Kanäle, Favoriten und Einstellungen löschen?')) return;
   state.channels = []; state.favs = []; state.recent = []; state.sources = []; state.settings = { ...DEFAULT_SETTINGS }; state.cat = 'Alle';
-  WL.logout(); TM.clear(); heroItems = [];
+  WL.logout(); TM.clear(); heroItems = []; XS.cat_ = {}; XS.info_ = {}; IDB.clear();
   resetCatalogs(); refresh(); renderRecs(); renderHero(); toast('Zurückgesetzt');
 });
 
@@ -4117,6 +4148,7 @@ setInterval(renderVpn, 15000);
 try { if (bridge) $('#appVersion').textContent = 'Version ' + bridge.appVersion(); } catch (e) {}
 vpnOnStart();
 setTimeout(() => checkUpdate(false), 5000);   // Start nicht blockieren
+setTimeout(() => { loadLib('hls'); loadLib('ts'); }, 6000);   // Ausweich-Player still vorladen
 setTimeout(() => SP.refresh(false), 8000);
 VP.share();    // Sportdaten im Hintergrund (für Erinnerungen)
 setInterval(checkReminders, 15000);
