@@ -217,6 +217,13 @@ class NativePlayer(private val act: Activity, private val root: FrameLayout, pri
                 p.prepare()
                 return
             }
+            // Serien/Filme: Netz-/Server-Fehler (z. B. Anbieter laesst kurz keine zweite Verbindung zu,
+            // etwa nach einem Spurwechsel) → kurz warten und an derselben Stelle weiter, statt abzubrechen
+            if (!live && p != null && liveRetries < 4 && error.errorCode in 2000..2999) {
+                liveRetries++
+                ui.postDelayed({ if (player === p) p.prepare() }, 1500L * liveRetries)
+                return
+            }
             emit("error", error.errorCodeName + " " + (error.message ?: ""))
         }
         override fun onTracksChanged(tracks: Tracks) { lastTracks = tracks; tracksJson = tracksToJson(tracks); emit("tracks") }

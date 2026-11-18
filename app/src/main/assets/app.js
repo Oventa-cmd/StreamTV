@@ -1870,7 +1870,7 @@ let hls = null, tsPlayer = null, engine = null, failCb = null, playToken = 0, st
 /* ---------- Nativer Player (Media3, nur Fire-TV-App) ----------
    Serien/Filme laufen nativ (Dolby-Ton, MKV, alle Spuren). Das <video>-Element bleibt die
    Schnittstelle für die ganze Oberfläche: currentTime, duration, paused … werden umgeleitet. */
-const NV = { on: false, t: 0, d: NaN, paused: true, seeking: false, seekAt: 0, tracks: [] };
+const NV = { on: false, t: 0, d: NaN, paused: true, seeking: false, seekAt: 0, tracks: [], subHide: false, lastCue: '' };
 window.NV = NV;   // die App ruft window.NV.ev(...) / NV.cue(...) auf
 const nvOk = () => { try { return !!(bridge && typeof bridge.nvPlay === 'function') && state.settings.nativeVod !== false; } catch (e) { return false; } };
 // Live-TV ebenfalls nativ (ExoPlayer mit großem Puffer) – viel stabiler als hls.js/mpegts.js in der WebView
@@ -1912,8 +1912,9 @@ NV.ev = (type, pos, dur, paused, msg) => {
   video.dispatchEvent(new Event(type));
 };
 NV.cue = text => {
-  const el = $('#nvCue');
-  el.innerHTML = text ? text.split('\n').map(l => `<span>${esc(l)}</span>`).join('<br>') : '';
+  NV.lastCue = text || '';
+  const el = $('#nvCue'), t = NV.subHide ? '' : NV.lastCue;
+  el.innerHTML = t ? t.split('\n').map(l => `<span>${esc(l)}</span>`).join('<br>') : '';
 };
 function nvStop() {
   if (!NV.on) return;
@@ -1946,7 +1947,7 @@ function startEngine(name, url, fail) {
   engine = name; failCb = fail;
   startTimer = setTimeout(() => fail(), 20000);
   if (name === 'exo') {
-    Object.assign(NV, { on: true, t: 0, d: NaN, paused: false, seeking: false, tracks: [] });
+    Object.assign(NV, { on: true, t: 0, d: NaN, paused: false, seeking: false, tracks: [], subHide: trkPref().sub === 'off', lastCue: '' });
     document.documentElement.classList.add('nv');
     try {
       if (vod) bridge.nvPlay(url, 0, 'IPTVSmartersPlayer');
@@ -2006,7 +2007,8 @@ function loadStream(url, keep) {
   let list = enginesFor(url);
   if (vod && nvOk()) list = ['exo', ...list];   // Serien & Filme: zuerst nativ (Dolby-Ton)
   else if (!vod && nvLiveOk()) list = ['exo', ...list];   // Live-TV: zuerst nativ (großer Puffer)
-  if (keep && RC.eng) list = [RC.eng, ...list.filter(x => x !== RC.eng)];   // zuerst die Engine, die schon lief
+  if (keep && RC.eng === 'exo' && vod) list = ['exo'];   // lief nativ → dabei bleiben (Ausweich-Player hat oft keinen Ton und keine Spuren)
+  else if (keep && RC.eng) list = [RC.eng, ...list.filter(x => x !== RC.eng)];   // zuerst die Engine, die schon lief
   const next = () => {
     if (token !== playToken) return;
     const e = list.shift();
@@ -2942,8 +2944,10 @@ function getTracks() {
     const au = NV.tracks.filter(t => t.type === 'audio'), tx = NV.tracks.filter(t => t.type === 'text');
     au.forEach((t, i) => audio.push({ label: trkLabel(t.label, t.lang, i) + (t.ch > 2 ? ` · ${t.ch === 6 ? '5.1' : t.ch === 8 ? '7.1' : t.ch + ' Kanäle'}` : '') + (t.ok ? '' : ' (nicht unterstützt)'),
       lang: langOf(t.lang), sel: t.sel, set: () => bridge.nvSelect('audio', t.g, t.i) }));
-    tx.forEach((t, i) => subs.push({ label: trkLabel(t.label, t.lang, i), lang: langOf(t.lang), sel: t.sel, set: () => bridge.nvSelect('text', t.g, t.i) }));
-    return { audio, subs, off: () => { bridge.nvSelect('text', -1, -1); NV.cue(''); }, offSel: !tx.some(t => t.sel) };
+    // „Aus“ blendet nur aus: ein Spurwechsel würde den Stream neu anfragen (Anbieter blockt das oft → kein Ton)
+    tx.forEach((t, i) => subs.push({ label: trkLabel(t.label, t.lang, i), lang: langOf(t.lang), sel: t.sel && !NV.subHide,
+      set: () => { NV.subHide = false; if (t.sel) NV.cue(NV.lastCue); else { NV.cue(''); bridge.nvSelect('text', t.g, t.i); } } }));
+    return { audio, subs, off: () => { NV.subHide = true; NV.cue(NV.lastCue); }, offSel: NV.subHide || !tx.some(t => t.sel) };
   }
   if (engine === 'hls' && hls) {
     (hls.audioTracks || []).forEach((t, i) => audio.push({ label: trkLabel(t.name, t.lang, i), lang: langOf(t.lang), sel: hls.audioTrack === i, set: () => { hls.audioTrack = i; } }));
