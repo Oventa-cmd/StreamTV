@@ -16,7 +16,7 @@ const DEMO_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
 const DEMO = ['Nachrichten', 'Nachrichten', 'Sport', 'Sport', 'Filme', 'Filme']
   .map((g, i) => ({ id: 'demo_' + i, src: 'demo', name: `Demo ${g} ${i % 2 + 1}`, group: g, logo: '', url: DEMO_URL }));
 let navY = 0, navYAt = 0;   // Ziel des laufenden Seiten-Scrollens (siehe pageScrollTo)
-const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], hideVod: [], lite: false, theme: 'graphite', saver: 5, nativeVod: true };
+const DEFAULT_SETTINGS = { autoRefresh: true, vpnAuto: true, vpnReq: false, tmdbKey: '', hideLive: [], hideSeries: [], hideVod: [], lite: false, theme: 'graphite', skin: 'glass', saver: 5, nativeVod: true };
 
 let state = { channels: [], favs: [], recent: [], sources: [], settings: { ...DEFAULT_SETTINGS }, cat: 'Alle', view: 'home' };
 let playerOpen = false, sheetOpen = false, currentId = null, osdTimer = null, lastFocus = null, playerFocus = null, vod = null, editId = null, xtFmt = 'm3u8';
@@ -3865,6 +3865,13 @@ $('#addSrcToggle').addEventListener('click', () => {
 $$('#saverSeg [data-saver]').forEach(b => b.addEventListener('click', () => { state.settings.saver = Number(b.dataset.saver); persist(); renderSettings(); b.focus({ preventScroll: true }); }));
 $('#saverNow').addEventListener('click', () => openSaver());
 $$('#themeSeg [data-theme]').forEach(b => b.addEventListener('click', () => { state.settings.theme = b.dataset.theme; persist(); applyTheme(); b.focus({ preventScroll: true }); }));
+// Design wählen: setzt auch den passenden Hintergrund (danach frei änderbar)
+const SKIN_BG = { glass: 'wave-blue', cinema: 'black', minimal: 'wave-mono', neon: 'wave-neon' };
+$$('#skinSeg [data-skin]').forEach(b => b.addEventListener('click', () => {
+  state.settings.skin = b.dataset.skin;
+  if (SKIN_BG[b.dataset.skin]) state.settings.theme = SKIN_BG[b.dataset.skin];
+  persist(); applyTheme(); b.focus({ preventScroll: true });
+}));
 $('#swVpnAuto').addEventListener('click', () => toggleSetting('vpnAuto'));
 $('#swVpnReq').addEventListener('click', () => toggleSetting('vpnReq'));
 $('#vpnOpen').addEventListener('click', () => {
@@ -4125,6 +4132,10 @@ function applyTheme() {
   const t = state.settings.theme || 'graphite';
   document.documentElement.dataset.theme = t;
   $$('#themeSeg [data-theme]').forEach(b => b.classList.toggle('sel', b.dataset.theme === t));
+  const k = state.settings.skin || 'glass';
+  document.documentElement.dataset.skin = k;
+  $$('#skinSeg [data-skin]').forEach(b => b.classList.toggle('sel', b.dataset.skin === k));
+  const tc = $('meta[name=theme-color]'); if (tc) tc.content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#000';
 }
 window.addEventListener('scroll', updateHeader, { passive: true });
 window.addEventListener('resize', moveTabInd);

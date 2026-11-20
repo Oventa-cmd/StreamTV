@@ -925,3 +925,69 @@ html:not(.web) .btn.primary,html:not(.web) .btn:focus{background:#fff}
 .tile.show.poster .art .t{display:none}
 .tile.show.poster .art .ini{font-size:1.4rem}
 .tile .sub:empty::before{content:"\00a0"}
+
+/* =====================================================================
+   Skins (Einstellungen → Allgemein → Design) – gleiche Namen wie im Launcher
+   Hintergrund-Wellen (Einstellungen → Allgemein → Hintergrund)
+   ===================================================================== */
+html[data-theme=wave-blue]{--bg:#070b22;--bgr:7,11,34;--wave:url(bg/wave_blue.jpg)}
+html[data-theme=wave-violet]{--bg:#0e0820;--bgr:14,8,32;--wave:url(bg/wave_violet.jpg)}
+html[data-theme=wave-red]{--bg:#0a0404;--bgr:10,4,4;--wave:url(bg/wave_red.jpg)}
+html[data-theme=wave-mono]{--bg:#08080a;--bgr:8,8,10;--wave:url(bg/wave_mono.jpg)}
+html[data-theme=wave-neon]{--bg:#06031a;--bgr:6,3,26;--wave:url(bg/wave_neon.jpg)}
+html[data-theme=wave-sunrise]{--bg:#160a06;--bgr:22,10,6;--wave:url(bg/wave_sunrise.jpg)}
+html[data-theme=wave-teal]{--bg:#031010;--bgr:3,16,16;--wave:url(bg/wave_teal.jpg)}
+html[data-theme^=wave]{--glow1:transparent;--glow2:transparent}
+/* Eigene feste Ebene statt background-attachment:fixed – schont die TV-GPU beim Scrollen */
+html[data-theme^=wave] body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:linear-gradient(rgba(var(--bgr),.10),rgba(var(--bgr),.62)),var(--wave) 50% 100%/cover no-repeat}
+html[data-theme^=wave] .hero{background:transparent}
+html[data-theme^=wave] .hero-bg,html[data-theme^=wave] .hero::after{-webkit-mask-image:linear-gradient(#000 55%,transparent 97%);mask-image:linear-gradient(#000 55%,transparent 97%)}
+html[data-theme^=wave] .hero::after{background:linear-gradient(to right,rgba(var(--bgr),.82),rgba(var(--bgr),.25) 55%,transparent 80%),linear-gradient(rgba(var(--bgr),.45),transparent 22%)}
+.skin-dots button.sel{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.5)}
+
+/* ---------- Kino: Netflix-Look – kantig, flach, Rot als Marke ---------- */
+html[data-skin=cinema]{--r-sm:3px;--r:4px;--r-lg:6px;--glass:rgba(255,255,255,.06);--glass2:rgba(255,255,255,.12)}
+html[data-skin=cinema] :is(.btn,.chip,.mini,.pill,.tabbar,.tabbar button,.seg,.seg button,.theme-dots button,.search,.field,.key,.vb,.group,.pm-item,.cl-row){border-radius:4px}
+html[data-skin=cinema] .tile .art{border-radius:4px}
+html[data-skin=cinema] .tile:focus .art,html[data-skin=cinema] .tile:hover .art{transform:scale(1.06);box-shadow:0 0 0 2px #fff,0 18px 40px rgba(0,0,0,.85)}
+html[data-skin=cinema] .tile:focus .art::after{opacity:0;animation:none}
+html[data-skin=cinema] .tabbar{background:transparent;box-shadow:none;border-color:transparent}
+html[data-skin=cinema] .tab-ind{background:transparent;box-shadow:inset 0 -3px 0 var(--red);border-radius:0}
+html[data-skin=cinema] .btn{background:rgba(109,109,110,.7);border-color:transparent;box-shadow:none}
+html[data-skin=cinema] .btn.primary{background:#fff;color:#000}
+html[data-skin=cinema] .group{background:#141414;border-color:#232323}
+html[data-skin=cinema] :is(.hero h1,.large-title){font-weight:800;letter-spacing:-.02em}
+html[data-skin=cinema] .section-label{font-weight:800;letter-spacing:-.01em}
+html[data-skin=cinema] .switch:focus,html[data-skin=cinema] .row-btn:focus{box-shadow:inset 4px 0 0 var(--red)}
+
+/* ---------- Minimal: ruhig, dünne Linien, keine Farbe ---------- */
+html[data-skin=minimal]{--red:#f5f5f7;--red-d:#8e8e93;--accent:#f5f5f7;--r:10px}
+html[data-skin=minimal] :is(.cl-live,.ev-live,.t10){color:#000;box-shadow:none}
+html[data-skin=minimal] .brand-icon{background:#f5f5f7;color:#000;box-shadow:none}
+html[data-skin=minimal] .tile:focus .art,html[data-skin=minimal] .tile:hover .art{transform:scale(1.04);box-shadow:0 0 0 2px rgba(255,255,255,.85),0 14px 30px rgba(0,0,0,.6)}
+html[data-skin=minimal] .tile:focus .art::after{opacity:0;animation:none}
+html[data-skin=minimal] .btn{background:transparent;border:1px solid rgba(255,255,255,.22);box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+html[data-skin=minimal] .btn.primary{background:#f5f5f7;color:#000}
+html[data-skin=minimal] .tabbar{background:transparent;box-shadow:none;border-color:transparent}
+html[data-skin=minimal] .tab-ind{background:transparent;box-shadow:inset 0 -1.5px 0 rgba(255,255,255,.8);border-radius:0}
+html[data-skin=minimal] .chip{background:transparent}
+html[data-skin=minimal] .chip.active{background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
+html[data-skin=minimal] .group{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.06)}
+html[data-skin=minimal] :is(.hero h1,.large-title){font-weight:500;letter-spacing:-.025em}
+html[data-skin=minimal] .section-label{font-weight:500}
+html[data-skin=minimal] .tabbar button.badge::after{box-shadow:none}
+
+/* ---------- Neon: dunkles Violett, Cyan-Fokus mit Leuchten ---------- */
+html[data-skin=neon]{--accent:#3df5ff;--red:#ff2bd6;--red-d:#b0109a;--r-sm:14px;--r:22px;--r-lg:28px}
+html[data-skin=neon] .tile .art{border-radius:18px}
+html[data-skin=neon] .tile:focus .art,html[data-skin=neon] .tile:hover .art{box-shadow:0 0 0 3px #3df5ff,0 0 30px rgba(61,245,255,.55),0 22px 44px rgba(0,0,0,.7)}
+html[data-skin=neon] :is(.btn,.chip,.mini,.tabbar button,.seg button,.theme-dots button,.key,button.pill,.pm-item,.ip-list .row-btn):focus{background:#3df5ff;color:#000;box-shadow:0 0 0 2px rgba(61,245,255,.35),0 0 24px rgba(61,245,255,.55)}
+html[data-skin=neon] .btn.primary{background:linear-gradient(120deg,#3df5ff,#7a5cff);color:#000}
+html[data-skin=neon] .tabbar{background:rgba(122,92,255,.12);border-color:rgba(122,92,255,.45)}
+html[data-skin=neon] .tab-ind{background:rgba(61,245,255,.16);box-shadow:inset 0 0 0 1px rgba(61,245,255,.45)}
+html[data-skin=neon] .group{background:rgba(26,16,51,.72);border-color:rgba(122,92,255,.3)}
+html[data-skin=neon] .switch:focus,html[data-skin=neon] .row-btn:focus{background:rgba(61,245,255,.1);box-shadow:inset 4px 0 0 #3df5ff}
+html[data-skin=neon] .brand-icon{background:linear-gradient(150deg,#3df5ff,#7a5cff 50%,#ff2bd6);box-shadow:0 0 18px rgba(61,245,255,.5)}
+html[data-skin=neon] :is(.large-title,.section-label){text-shadow:0 0 18px rgba(61,245,255,.25)}
+html[data-skin=neon] .tile .pbar i,html[data-skin=neon] .ip-pbar i{background:linear-gradient(90deg,#3df5ff,#ff2bd6)}
