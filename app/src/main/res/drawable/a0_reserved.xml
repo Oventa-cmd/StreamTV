@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Platzhalter: belegt die alten Ressourcen-Nummern, damit Icon/Banner neue IDs bekommen (Amazon-Startseite cached Bilder pro Ressourcen-ID) -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle"><solid android:color="#00000000" /></shape>
