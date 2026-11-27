@@ -866,7 +866,7 @@ html.pv #pv{opacity:1;visibility:visible;transition:opacity .4s var(--ease)}
 .pv-ov{color:rgba(235,235,245,.8);font-size:.9rem;line-height:1.45;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .view.active section,.view.active .hero,.view.active>.pad,.view.active .cat-label,.view.active .chips{transition:opacity .3s var(--ease)}
 html.pv .pv-above{opacity:0!important;pointer-events:none}
-html.pv .view.active{padding-bottom:75vh}
+html.pv .view.active{padding-bottom:75vh;padding-top:var(--pv-pad,0px)}
 
 /* ---------- Etikett „Neue Folge“ ---------- */
 .tile .nb{position:absolute;left:50%;bottom:0;transform:translateX(-50%);white-space:nowrap;padding:.2rem .55rem;border-radius:.4rem .4rem 0 0;

@@ -748,6 +748,7 @@ function pvOff() {
   PV.on = false; PV.key = ''; clearTimeout(PV.t);
   document.documentElement.classList.remove('pv');
   for (const x of document.querySelectorAll('.pv-above')) x.classList.remove('pv-above');
+  for (const v of document.querySelectorAll('.view')) v.style.removeProperty('--pv-pad');
 }
 function pvSet(el) {
   if (!pvEligible(el)) return pvOff();
@@ -761,6 +762,17 @@ function pvSet(el) {
   const hdr = $('header').offsetHeight, h = sec.offsetHeight, vh = window.innerHeight;
   PV.line = Math.round(Math.max(hdr + 150, Math.min(vh * 0.62, vh - h - 6)));
   document.documentElement.style.setProperty('--pv-line', PV.line + 'px');
+  // Obere Reihen lassen sich sonst nicht bis zur Linie schieben → Infos lägen über Titel und Kacheln.
+  // Darum oben genau so viel Platz einfügen, dass jede Reihe unter die Vorschau passt.
+  const pad = parseFloat(view.style.getPropertyValue('--pv-pad')) || 0;
+  const top = window.scrollY + sec.getBoundingClientRect().top - pad;
+  const need = Math.max(0, Math.ceil(PV.line - top));
+  if (need !== pad) {
+    for (const v of document.querySelectorAll('.view')) if (v !== view) v.style.removeProperty('--pv-pad');
+    view.style.setProperty('--pv-pad', need + 'px');
+    // Seite um denselben Betrag mitschieben, damit nichts springt
+    if (need - pad) window.scrollTo({ top: window.scrollY + need - pad, behavior: 'instant' });
+  }
   pvInfo(el);
 }
 function pvData(el) {
